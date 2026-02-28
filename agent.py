@@ -73,7 +73,6 @@ async def run_agent(user_query: str):
                         model="gpt-5-mini",
                         input=input_items,
                         tools=openai_tools,
-                        temperature=0,
                         reasoning={"effort":"minimal"},
                     )
 
@@ -88,7 +87,7 @@ async def run_agent(user_query: str):
 
                     for fc in function_calls:
                         fn_args = json.loads(fc.arguments)
-                        print(f"  -> {fc.name}({json.dumps(fn_args)[:120]})")
+                        print(f"  -> {fc.name}({json.dumps(fn_args)})")
 
                         try:
                             result = await session.call_tool(fc.name, fn_args)
@@ -113,7 +112,7 @@ async def run_agent(user_query: str):
 
                         output = "\n".join(texts) or "(empty)"
                         tag = " [+screenshot]" if has_image else ""
-                        print(f"     {output[:150]}{tag}")
+                        print(f"     {output}{tag}")
 
                         input_items.append({"type": "function_call_output", "call_id": fc.call_id, "output": output})
 
