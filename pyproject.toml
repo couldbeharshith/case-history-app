@@ -1,0 +1,11 @@
+[project]
+name = "case-history-app"
+version = "0.1.0"
+description = ""
+readme = ""
+requires-python = ">=3.13"
+dependencies = [
+    "mcp>=1.26.0",
+    "openai>=2.24.0",
+    "python-dotenv>=1.2.1",
+]
