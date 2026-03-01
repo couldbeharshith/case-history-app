@@ -1,13 +1,12 @@
 [project]
 name = "case-history-app"
-version = "0.1.0"
+version = "1.0.0"
 description = ""
 readme = ""
 requires-python = ">=3.13"
 dependencies = [
     "beautifulsoup4>=4.14.3",
     "fastapi>=0.135.0",
-    "mcp>=1.26.0",
     "openai>=2.24.0",
     "playwright>=1.58.0",
     "pydantic>=2.12.5",

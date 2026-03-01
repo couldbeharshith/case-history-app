@@ -18,5 +18,6 @@ wheels/
 
 uv.lock
 
-
 .env
+
+temp/
