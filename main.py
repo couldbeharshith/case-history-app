@@ -14,10 +14,11 @@ import requests
 load_dotenv()
 
 logging.basicConfig(
-    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    level=logging.WARNING,
     format=r"%(asctime)s | %(name)s | %(levelname)s | %(message)s",
 )
 logger = logging.getLogger(__name__)
+logger.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
 
 
 CASE_URL = "https://services.ecourts.gov.in/ecourtindia_v6/"
