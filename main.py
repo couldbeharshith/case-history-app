@@ -1,4 +1,6 @@
 import base64
+import logging
+import os
 from openai import OpenAI
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright, Page
@@ -11,12 +13,21 @@ import requests
 
 load_dotenv()
 
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format=r"%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 
 CASE_URL = "https://services.ecourts.gov.in/ecourtindia_v6/"
 FIR_URL = "https://ksp.karnataka.gov.in/firsearch/en"
 CAPTCHA_PROMPT_FILE = Path(__file__).parent / "captcha_prompt.md"
 SUMMARY_PROMPT_FILE = Path(__file__).parent / "summary_prompt.md"
 OPTIONS_PROMPT_FILE = Path(__file__).parent / "options_prompt.md"
+MAX_CAPTCHA_RETRIES = 3
+
+client = OpenAI()
 
 
 class CaptchaText(BaseModel):
@@ -28,8 +39,6 @@ class OptionSelect(BaseModel):
 
 
 def ask_llm_options(options: str, ps: str, prompt: str) -> str | None:
-    client = OpenAI()
-
     input_items: list = [
         {"role": "system", "content": load_prompt_file(OPTIONS_PROMPT_FILE)},
         {
@@ -118,8 +127,6 @@ class Browser:
 
 
 def solve_captcha(bs64: str) -> str:
-    client = OpenAI()
-
     input_items: list = [
         {"role": "system", "content": load_prompt_file(CAPTCHA_PROMPT_FILE)},
         {
@@ -142,7 +149,8 @@ def solve_captcha(bs64: str) -> str:
         text_format=CaptchaText,
     )
 
-    print(out := response.output_parsed.text)
+    out = response.output_parsed.text
+    logger.debug("Captcha OCR result: %s", out)
     return out
 
 
@@ -165,8 +173,7 @@ Row number: {content["row_num"]}
     return text
 
 
-def get_summary(overview_img_b64: str, history: list[dict], FIR_file_url: str) -> None:
-    client = OpenAI()
+def get_summary(overview_img_b64: str, history: list[dict], FIR_file_url: str) -> str:
     file_bytes = requests.get(FIR_file_url).content
 
     file = client.files.create(
@@ -196,11 +203,14 @@ def get_summary(overview_img_b64: str, history: list[dict], FIR_file_url: str) -
         stream=True,
     )
 
+    full_text = ""
     for event in stream:
         if event.type == "response.output_text.delta":
             print(event.delta, end="", flush=True)
+            full_text += event.delta
 
     print()
+    return full_text
 
 
 def html_table_to_rows(table_html: str) -> list[str]:
@@ -231,14 +241,14 @@ def get_FIR_details(FIR_rows: list[str]) -> tuple[str, str, str]:
     stn_row, num_row, year_row = FIR_rows[-3:]
     police_stn, num, year = stn_row[1].strip(), num_row[1].strip(), year_row[1].strip()
 
-    lPadding = 4 - len(num)  # left pad with 0 for 4 digit number
+    lPadding = 4 - len(num)  # left pad with 0 for 4 fir number format
     num = "0" * lPadding + num
 
     return police_stn, num, year
 
 
 def enter_CNR_and_solve_captcha(page: Page, CNR: str) -> None:
-    while True:
+    for attempt in range(1, MAX_CAPTCHA_RETRIES + 1):
         page.locator("#cino").type(CNR, delay=70)
         page.wait_for_selector("#captcha_image", state="visible")
 
@@ -253,11 +263,14 @@ def enter_CNR_and_solve_captcha(page: Page, CNR: str) -> None:
         
         
         if not page.locator("div.modal-body.p-1").is_visible():
-            print("Captcha solved successfully!")
-            break
+            logger.info("Captcha solved successfully on attempt %d", attempt)
+            return
         else:
-            page.reload()
-            print("Captcha was wrong. Retrying...")
+            logger.warning("Captcha wrong (attempt %d/%d)", attempt, MAX_CAPTCHA_RETRIES)
+            if attempt < MAX_CAPTCHA_RETRIES:
+                page.reload()
+
+    raise RuntimeError(f"Failed to solve captcha after {MAX_CAPTCHA_RETRIES} attempts")
 
 def main():
     CNR = "KABC0A00151620243"
@@ -346,8 +359,8 @@ def main():
             ps=police_stn,
             prompt="Help me choose my district using my police station given to you **STRICTLY** from the options given to you",
         )
-        print("===========")
-        print(district_options[:50])
+        logger.debug("District options (truncated): %s", district_options[:50])
+        logger.info("Selected district: %s", district)
         page.select_option("#district_id", label=district)
 
         page.wait_for_function(
@@ -359,14 +372,14 @@ def main():
             'select => Array.from(select.options).slice(1).map(o => o.textContent.trim()).join(",")',
         )
 
-        print(ps_options[:65])
-        print("==========")
+        logger.debug("PS options (truncated): %s", ps_options[:65])
         ps = ask_llm_options(
             options=ps_options,
             ps=police_stn,
             prompt="Help me choose the correct spelling of my police station **STRICTLY** from the options given to you",
         )
 
+        logger.info("Selected police station: %s", ps)
         page.select_option("#ps_id", label=ps)
 
         page.type("#fir_num", FIR_num)
@@ -378,23 +391,20 @@ def main():
         with page.expect_popup() as popup_info:
             page.click("input.btn.btn-primary.btn-lg.pull-right.btnfir")
 
-        new_page = popup_info.value
-        new_page.wait_for_load_state()
-        page = new_page
+        fir_list_page = popup_info.value
+        fir_list_page.wait_for_load_state()
 
-        with page.expect_popup() as popup_info:
-            page.click("a.btn")
+        with fir_list_page.expect_popup() as popup_info:
+            fir_list_page.click("a.btn")
 
-        final_page = popup_info.value
-        final_page.wait_for_load_state()
-        page = final_page
+        fir_pdf_page = popup_info.value
+        fir_pdf_page.wait_for_load_state()
 
-        print(page.url)
-        # breakpoint()
+        logger.info("FIR PDF URL: %s", fir_pdf_page.url)
 
         #! Get final summary
         get_summary(
-            overview_img_b64=overview_img_b64, history=history, FIR_file_url=page.url
+            overview_img_b64=overview_img_b64, history=history, FIR_file_url=fir_pdf_page.url
         )
     finally:
         b.stop()

@@ -1,18 +1,19 @@
 import base64
+import logging
 import re
 from typing import Generator
 
 import requests
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import StreamingResponse
-from openai import OpenAI
 
 from main import (
     Browser,
     CASE_URL,
     FIR_URL,
     SUMMARY_PROMPT_FILE,
-    solve_captcha,
+    client,
+    enter_CNR_and_solve_captcha,
     html_table_to_rows,
     get_FIR_details,
     ask_llm_options,
@@ -20,27 +21,21 @@ from main import (
     load_prompt_file,
 )
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="Case History API")
 
 
 def scrape_case_data(cnr_num: str) -> dict:
     """Run full browser automation to collect case data, history, and FIR PDF URL."""
+    logger.info("Starting scrape for CNR: %s", cnr_num)
     b = Browser().start()
     page = b.page
     try:
-        # Open eCourts and enter CNR
+        # Open eCourts and enter CNR + solve captcha with retries
         page.goto(CASE_URL, wait_until="domcontentloaded")
         page.wait_for_timeout(1000)
-        page.locator("#cino").type(cnr_num, delay=70)
-        page.wait_for_selector("#captcha_image", state="visible")
-
-        # Solve captcha
-        captcha_img_bytes = page.locator("#captcha_image").screenshot()
-        captcha_img_b64 = base64.b64encode(captcha_img_bytes).decode("utf-8")
-        captcha = solve_captcha(captcha_img_b64)
-        page.locator("#fcaptcha_code").type(captcha, delay=40)
-        page.wait_for_timeout(500)
-        page.click("#searchbtn")
+        enter_CNR_and_solve_captcha(page=page, CNR=cnr_num)
 
         # Inject table border CSS for clean screenshot
         page.add_style_tag(
@@ -137,6 +132,7 @@ def scrape_case_data(cnr_num: str) -> dict:
         final_page.wait_for_load_state()
 
         fir_file_url = final_page.url
+        logger.info("Scrape complete. FIR PDF URL: %s", fir_file_url)
 
         return {
             "overview_img_b64": overview_img_b64,
@@ -151,7 +147,6 @@ def stream_summary(
     overview_img_b64: str, history: list[dict], fir_file_url: str
 ) -> Generator[str, None, None]:
     """Yield LLM summary chunks as they arrive."""
-    client = OpenAI()
     pdf_bytes = requests.get(fir_file_url).content
 
     file = client.files.create(
@@ -192,6 +187,7 @@ def case_summary(cnr_num: str = Query(..., description="CNR number of the case")
     try:
         data = scrape_case_data(cnr_num)
     except Exception as e:
+        logger.exception("Scraping failed for CNR %s", cnr_num)
         raise HTTPException(status_code=500, detail=f"Scraping failed: {e}")
 
     return StreamingResponse(
