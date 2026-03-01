@@ -11,6 +11,8 @@ from playwright.sync_api import Page
 from src.browser import Browser
 from src.config import CASE_URL, FIR_URL, MAX_CAPTCHA_RETRIES, get_logger
 from src.llm import ask_llm_options, solve_captcha
+from src.district import get_district_and_ps
+
 
 logger = get_logger(__name__)
 
@@ -144,12 +146,17 @@ def _lookup_fir_pdf_url(
         "#district_id",
         'el => Array.from(el.options).slice(1).map(o => o.textContent.trim()).join(",")',
     )
-    district = ask_llm_options(
-        options=district_options,
-        ps=police_stn,
-        prompt="Help me choose my district using my police station given to you"
-        " **STRICTLY** from the options given to you",
-    )
+    
+    #NOTE: LLM is expensive, try exact match 
+    # district = ask_llm_options(
+    #     options=district_options,
+    #     ps=police_stn,
+    #     prompt="Help me choose my district using my police station given to you"
+    #     " **STRICTLY** from the options given to you",
+    # )
+    
+    district, ps = get_district_and_ps(police_stn)
+    
     logger.debug("District options (truncated): %s", district_options[:50])
     logger.info("Selected district: %s", district)
     page.select_option("#district_id", label=district)
@@ -160,12 +167,15 @@ def _lookup_fir_pdf_url(
         "#ps_id",
         'el => Array.from(el.options).slice(1).map(o => o.textContent.trim()).join(",")',
     )
-    ps = ask_llm_options(
-        options=ps_options,
-        ps=police_stn,
-        prompt="Help me choose the correct spelling of my police station"
-        " **STRICTLY** from the options given to you",
-    )
+    
+    #NOTE: LLM is expensive, try exact match 
+    # ps = ask_llm_options(
+    #     options=ps_options,
+    #     ps=police_stn,
+    #     prompt="Help me choose the correct spelling of my police station"
+    #     " **STRICTLY** from the options given to you",
+    # )
+    
     logger.debug("PS options (truncated): %s", ps_options[:65])
     logger.info("Selected police station: %s", ps)
     page.select_option("#ps_id", label=ps)
