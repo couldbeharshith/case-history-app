@@ -6,6 +6,7 @@ readme = ""
 requires-python = ">=3.13"
 dependencies = [
     "beautifulsoup4>=4.14.3",
+    "fastapi>=0.135.0",
     "mcp>=1.26.0",
     "openai>=2.24.0",
     "playwright>=1.58.0",

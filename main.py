@@ -1,7 +1,7 @@
 import base64
 from openai import OpenAI
 from dotenv import load_dotenv
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, Page
 from pathlib import Path
 from pydantic import BaseModel
 from bs4 import BeautifulSoup
@@ -49,9 +49,8 @@ def ask_llm_options(options: str, ps: str, prompt: str) -> str | None:
 
 
 def load_prompt_file(file: Path) -> str:
-    if file.exists():
-        if text := file.read_text(encoding="utf-8").strip():
-            return text
+    text = file.read_text(encoding="utf-8").strip()
+    return text
 
 
 class Browser:
@@ -130,7 +129,7 @@ def solve_captcha(bs64: str) -> str:
                 {
                     "type": "input_image",
                     "image_url": f"data:image/png;base64,{bs64}",
-                    "detail": "low",
+                    "detail": "high",
                 },
             ],
         },
@@ -166,12 +165,12 @@ Row number: {content["row_num"]}
     return text
 
 
-def get_summary(overview_img_b64: str, history: list[dict], FIR_file_url: str) -> str:
+def get_summary(overview_img_b64: str, history: list[dict], FIR_file_url: str) -> None:
     client = OpenAI()
-    bytes = requests.get(FIR_file_url).content
+    file_bytes = requests.get(FIR_file_url).content
 
     file = client.files.create(
-        file=("fir.pdf", bytes, "application/pdf"), purpose="user_data"
+        file=("fir.pdf", file_bytes, "application/pdf"), purpose="user_data"
     )
 
     input_items: list = [
@@ -238,14 +237,9 @@ def get_FIR_details(FIR_rows: list[str]) -> tuple[str, str, str]:
     return police_stn, num, year
 
 
-def main():
-    b = Browser().start()
-    page = b.page
-    try:
-        #! Open record and captcha
-        page.goto(CASE_URL, wait_until="domcontentloaded")
-        page.wait_for_timeout(1000)
-        page.locator("#cino").type("KABC0A00151620243", delay=70)
+def enter_CNR_and_solve_captcha(page: Page, CNR: str) -> None:
+    while True:
+        page.locator("#cino").type(CNR, delay=70)
         page.wait_for_selector("#captcha_image", state="visible")
 
         captcha_img_bytes = page.locator("#captcha_image").screenshot()
@@ -253,8 +247,29 @@ def main():
 
         captcha = solve_captcha(captcha_img_b64)
         page.locator("#fcaptcha_code").type(captcha, delay=40)
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(100)
         page.click("#searchbtn")
+        page.wait_for_timeout(500)
+        
+        
+        if not page.locator("div.modal-body.p-1").is_visible():
+            print("Captcha solved successfully!")
+            break
+        else:
+            page.reload()
+            print("Captcha was wrong. Retrying...")
+
+def main():
+    CNR = "KABC0A00151620243"
+    b = Browser().start()
+    page = b.page
+    try:
+        #! Open record and captcha
+        page.goto(CASE_URL, wait_until="domcontentloaded")
+        page.wait_for_timeout(1000)
+
+        #! Enter CNR and solve captcha (with retry if wrong) 
+        enter_CNR_and_solve_captcha(page=page, CNR=CNR)
 
         #! inject table border css
 
@@ -349,7 +364,7 @@ def main():
         ps = ask_llm_options(
             options=ps_options,
             ps=police_stn,
-            prompt="Help me choose the correct spelling of my police station **STRICTLY** from the options given yo",
+            prompt="Help me choose the correct spelling of my police station **STRICTLY** from the options given to you",
         )
 
         page.select_option("#ps_id", label=ps)
@@ -381,7 +396,6 @@ def main():
         get_summary(
             overview_img_b64=overview_img_b64, history=history, FIR_file_url=page.url
         )
-        page.wait_for_timeout(1000000)
     finally:
         b.stop()
 
