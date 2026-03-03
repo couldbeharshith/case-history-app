@@ -84,9 +84,9 @@ def build_summary_text(history: list[dict[str, str]]) -> str:
     return "\n".join(parts)
 
 
-def upload_fir_file(fir_file_url: str) -> str:
-    """Download the FIR PDF and upload it to the files API. Returns the file_id."""
-    file_bytes = requests.get(fir_file_url, timeout=30).content
+def upload_fir_file(fir_url: str) -> str:
+    """Download the FIR PDF from a URL and upload it to the OpenAI files API. Returns the file_id."""
+    file_bytes = requests.get(fir_url, timeout=30).content
     uploaded = client.files.create(
         file=("fir.pdf", file_bytes, "application/pdf"),
         purpose="user_data",
@@ -132,23 +132,22 @@ def stream_summary(
 
 
 def stream_followup(
-    conversation_history: list[dict],
+    summary: str,
+    follow_up_messages: list[dict],
     overview_img_b64: str,
-    history: list[dict],
     file_id: str,
 ) -> Generator[str, None, None]:
-    """Stream a follow-up answer from the LLM given the full conversation history.
+    """Stream a follow-up answer, reconstructing full context each time.
 
-    ``conversation_history`` is the list of ChatMessage dicts ({role, content})
-    from the stored chat. The first message is the original "Generate summary"
-    request which we replace with the rich multimodal context; all subsequent
-    messages are passed through as-is.
+    The LLM sees:
+      1. System prompt
+      2. Rich context message (overview image + FIR PDF)
+      3. Assistant message with the stored summary
+      4. All follow-up user/assistant turns
     """
-    # Build the rich context message that replaces the plain initial user message
     context_message: dict = {
         "role": "user",
         "content": [
-            {"type": "input_text", "text": build_summary_text(history)},
             {
                 "type": "input_image",
                 "image_url": f"data:image/png;base64,{overview_img_b64}",
@@ -158,14 +157,13 @@ def stream_followup(
         ],
     }
 
-    # Skip the first plain user message, replace it with the rich one
-    tail_messages = conversation_history[1:] if len(conversation_history) > 1 else []
     llm_input = [
         {"role": "system", "content": load_prompt(SUMMARY_PROMPT_FILE)},
         context_message,
+        {"role": "assistant", "content": summary},
         *[
             {"role": m["role"], "content": m["content"]}
-            for m in tail_messages
+            for m in follow_up_messages
         ],
     ]
 

@@ -26,3 +26,4 @@ uv.lock
 temp/
 
 frontend/chat-data/
+backend/data/*/

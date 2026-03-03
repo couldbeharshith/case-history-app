@@ -26,18 +26,16 @@ export async function POST(
   saveChat(chat);
 
   // Stream from backend
-  const backendUrl = `${BACKEND_URL}/case-summary?cnr_num=${encodeURIComponent(cnr)}`;
+  const backendUrl = `${BACKEND_URL}/case-summary?cnr_num=${encodeURIComponent(cnr)}&chat_id=${encodeURIComponent(id)}`;
 
   try {
     const backendRes = await fetch(backendUrl);
 
     if (!backendRes.ok) {
       const errText = await backendRes.text();
-      chat.messages.push({
-        role: "assistant",
-        content: `Error fetching summary: ${errText}`,
-        timestamp: Date.now(),
-      });
+      // Don't save error as assistant message — roll back the user message
+      chat.messages.pop();
+      chat.updated_at = Date.now();
       saveChat(chat);
       return new Response(JSON.stringify({ error: errText }), {
         status: 502,
@@ -86,11 +84,9 @@ export async function POST(
     });
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : "Unknown error";
-    chat.messages.push({
-      role: "assistant",
-      content: `Failed to connect to backend: ${errMsg}`,
-      timestamp: Date.now(),
-    });
+    // Roll back the user message on failure
+    chat.messages.pop();
+    chat.updated_at = Date.now();
     saveChat(chat);
     return new Response(JSON.stringify({ error: errMsg }), {
       status: 502,

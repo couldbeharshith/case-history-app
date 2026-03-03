@@ -34,18 +34,16 @@ export async function POST(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        cnr_num: chat.cnr_num,
-        conversation_history: chat.messages,
+        chat_id: id,
+        question,
       }),
     });
 
     if (!backendRes.ok) {
       const errText = await backendRes.text();
-      chat.messages.push({
-        role: "assistant",
-        content: `Error: ${errText}`,
-        timestamp: Date.now(),
-      });
+      // Roll back the user message — don't pollute history with failed turns
+      chat.messages.pop();
+      chat.updated_at = Date.now();
       saveChat(chat);
       return new Response(JSON.stringify({ error: errText }), {
         status: 502,
@@ -55,6 +53,10 @@ export async function POST(
 
     const reader = backendRes.body?.getReader();
     if (!reader) {
+      // Roll back the user message
+      chat.messages.pop();
+      chat.updated_at = Date.now();
+      saveChat(chat);
       return new Response(JSON.stringify({ error: "No response body" }), {
         status: 502,
         headers: { "Content-Type": "application/json" },
@@ -94,11 +96,9 @@ export async function POST(
     });
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : "Unknown error";
-    chat.messages.push({
-      role: "assistant",
-      content: `Failed to connect to backend: ${errMsg}`,
-      timestamp: Date.now(),
-    });
+    // Roll back the user message — don't leave an orphaned user turn with no reply
+    chat.messages.pop();
+    chat.updated_at = Date.now();
     saveChat(chat);
     return new Response(JSON.stringify({ error: errMsg }), {
       status: 502,
