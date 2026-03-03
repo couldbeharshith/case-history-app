@@ -84,22 +84,27 @@ def build_summary_text(history: list[dict[str, str]]) -> str:
     return "\n".join(parts)
 
 
+def upload_fir_file(fir_file_url: str) -> str:
+    """Download the FIR PDF and upload it to the files API. Returns the file_id."""
+    file_bytes = requests.get(fir_file_url, timeout=30).content
+    uploaded = client.files.create(
+        file=("fir.pdf", file_bytes, "application/pdf"),
+        purpose="user_data",
+    )
+    logger.debug("Uploaded FIR file, id=%s", uploaded.id)
+    return uploaded.id
+
+
 def stream_summary(
     overview_img_b64: str,
     history: list[dict],
-    fir_file_url: str,
+    file_id: str,
 ) -> Generator[str, None, None]:
     """Yield summary text chunks as they stream from the LLM.
 
     Works identically for the CLI (print each chunk) and the API (yield to
     StreamingResponse).
     """
-    file_bytes = requests.get(fir_file_url, timeout=30).content
-    uploaded = client.files.create(
-        file=("fir.pdf", file_bytes, "application/pdf"),
-        purpose="user_data",
-    )
-
     stream = client.responses.create(
         model="gpt-5-nano",
         input=[
@@ -113,10 +118,60 @@ def stream_summary(
                         "image_url": f"data:image/png;base64,{overview_img_b64}",
                         "detail": "high",
                     },
-                    {"type": "input_file", "file_id": uploaded.id},
+                    {"type": "input_file", "file_id": file_id},
                 ],
             },
         ],
+        reasoning={"effort": "low"},
+        stream=True,
+    )
+
+    for event in stream:
+        if event.type == "response.output_text.delta":
+            yield event.delta
+
+
+def stream_followup(
+    conversation_history: list[dict],
+    overview_img_b64: str,
+    history: list[dict],
+    file_id: str,
+) -> Generator[str, None, None]:
+    """Stream a follow-up answer from the LLM given the full conversation history.
+
+    ``conversation_history`` is the list of ChatMessage dicts ({role, content})
+    from the stored chat. The first message is the original "Generate summary"
+    request which we replace with the rich multimodal context; all subsequent
+    messages are passed through as-is.
+    """
+    # Build the rich context message that replaces the plain initial user message
+    context_message: dict = {
+        "role": "user",
+        "content": [
+            {"type": "input_text", "text": build_summary_text(history)},
+            {
+                "type": "input_image",
+                "image_url": f"data:image/png;base64,{overview_img_b64}",
+                "detail": "high",
+            },
+            {"type": "input_file", "file_id": file_id},
+        ],
+    }
+
+    # Skip the first plain user message, replace it with the rich one
+    tail_messages = conversation_history[1:] if len(conversation_history) > 1 else []
+    llm_input = [
+        {"role": "system", "content": load_prompt(SUMMARY_PROMPT_FILE)},
+        context_message,
+        *[
+            {"role": m["role"], "content": m["content"]}
+            for m in tail_messages
+        ],
+    ]
+
+    stream = client.responses.create(
+        model="gpt-5-nano",
+        input=llm_input,
         reasoning={"effort": "low"},
         stream=True,
     )

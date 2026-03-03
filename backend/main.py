@@ -8,7 +8,7 @@ logger = get_logger(__name__)
 
 
 def main() -> None:
-    cnr = "KABC0A00151620243"
+    cnr = "KABC0A0015162024"
     logger.info("CLI run for CNR: %s", cnr)
 
     data = scrape_case_data(cnr)

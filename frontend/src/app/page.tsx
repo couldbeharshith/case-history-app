@@ -137,6 +137,7 @@ export default function HomePage() {
                   autoFocus
                   spellCheck={false}
                   autoComplete="off"
+                  suppressHydrationWarning
                 />
                 <button
                   type="submit"
