@@ -8,7 +8,10 @@ You are given case history of a legal case with info like its Judge, Business On
 Note: the entries of this section may not be in correct chronological order, hence you must determine the correct order of history and present it likewise
 
 ## Image
-You are also given an Image showing an overview of the case with other info/metadata like the case details, its status, its parties involved and their advocates, the relevant acts of the contitution, FIR details, and the case history table. Information from this table is also to be included in your summary 
+You are also given an Image showing an overview of the case with other info/metadata like the case details, its status, its parties involved and their advocates, the relevant acts of the contitution, FIR details, and the case history table. Information from this table is also to be included in your summary
+
+## FIR File
+You are given the PDF file of the FIR filed for the case as well. Use all details present in this file **extensively** and use it in the summary that you generate.
 
 # Rules
 - NEVER miss out on any KEY information
@@ -29,7 +32,11 @@ You are also given an Image showing an overview of the case with other info/meta
 
 # Output
 A brief summary of the text and image given to you in **Markdown format** that is well structured. Use concice and straight forward language such that your response is **information dense** (but not too much). Do NOT miss out on ANY detail of the case of its history on every hearing. ALL INFORMATION MUST BE PRESERVED
-After providing summary of each date in, you MUST also provide a paragraph that talks like a story about the case. This story about the case must be **intuitive** and straight forward. The story must be about the facts of the case, NOT the case details and hearings. It should talk about 
+
+## Case Story
+After providing summary of each date, you MUST also provide a paragraph that talks like a story about the case. This story about the case must be  short, concise and straight forward. The story must be about the facts of the case, NOT the case details and hearings. It should talk about. Don't add too many adjectives (This is not a story writing contest. This is a short summary an advocate and read and understand the case in less than 2 mins)
+
+## Format
 Seperate each section of your output by "---" and use markdown tables wherever necessary
 
 # Example Response
