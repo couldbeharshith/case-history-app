@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Chat } from "../lib/types";
 
 interface ChatViewProps {
@@ -286,7 +287,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
 
                   {displayContent ? (
                     <div className="markdown-body text-[14px]">
-                      <ReactMarkdown>{displayContent}</ReactMarkdown>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{displayContent}</ReactMarkdown>
                     </div>
                   ) : (
                     isStreaming && (
