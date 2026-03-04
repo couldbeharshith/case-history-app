@@ -56,7 +56,7 @@ class Browser:
 
         route.continue_()
 
-    def start(self, *, headless: bool = False) -> "Browser":
+    def start(self, *, headless: bool = True) -> "Browser":
         """Start browser instance with resource blocking enabled."""
         self._pw = sync_playwright().start()
         self._browser = self._pw.chromium.launch(
