@@ -19,8 +19,6 @@ wheels/
 
 *temp*.*
 
-uv.lock
-
 .env
 
 temp/
