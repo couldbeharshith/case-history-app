@@ -34,14 +34,14 @@ COPY --from=frontend-builder /app/frontend/package*.json ./frontend/
 COPY --from=frontend-builder /app/frontend/node_modules ./frontend/node_modules
 COPY frontend/next.config.ts ./frontend/
 
-# Startup: uvicorn on internal port 8000, Next.js on $PORT (Render sets this)
-RUN printf '#!/bin/bash\n\
+# Create startup script (Render uses PORT env variable)
+RUN echo '#!/bin/bash\n\
 cd /app/backend && uv run uvicorn api:app --host 127.0.0.1 --port 8000 &\n\
 cd /app/frontend && PORT=${PORT:-3000} npm start &\n\
 while true; do\n\
   curl -s https://example.com > /dev/null 2>&1\n\
   sleep 30\n\
-done\n' > /app/start.sh && chmod +x /app/start.sh
+done' > /app/start.sh && chmod +x /app/start.sh
 
 EXPOSE ${PORT:-3000}
 
