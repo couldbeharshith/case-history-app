@@ -92,6 +92,12 @@ input:-webkit-autofill:focus {
   border-radius: 4px;
 }
 
+/* Suppress default focus outline on styled inputs */
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+}
+
 /* Markdown rendering styles */
 .markdown-body {
   line-height: 1.8;

@@ -11,7 +11,7 @@ Note: the entries of this section may not be in correct chronological order, hen
 You are also given an Image showing an overview of the case with other info/metadata like the case details, its status, its parties involved and their advocates, the relevant acts of the contitution, FIR details, and the case history table. Information from this table is also to be included in your summary
 
 ## FIR File
-You are given the PDF file of the FIR filed for the case as well. Use all details present in this file **extensively** and use it in the summary that you generate.
+You are given the PDF file of the FIR (NOT always given) filed for the case as well. Use all details present in this file **extensively** and use it in the summary that you generate. When the FIR is not given to you, you MUST inform the user about it saying "The FIR file for this case was not found on `https://ksp.karnataka.gov.in/firsearch/en`. Kindly get a physical copy of the FIR from the Police Station."
 
 # Rules
 - NEVER miss out on any KEY information

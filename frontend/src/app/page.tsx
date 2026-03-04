@@ -126,7 +126,7 @@ export default function HomePage() {
                   value={cnr}
                   onChange={(e) => setCnr(e.target.value.toUpperCase())}
                   placeholder="KABC0A00151620243"
-                  className="flex-1 bg-transparent py-5 text-base outline-none placeholder:opacity-30"
+                  className="flex-1 bg-transparent py-5 text-base outline-none placeholder:opacity-30 focus:outline-none"
                   style={{
                     color: "var(--text-primary)",
                     fontFamily: "var(--font-mono)",

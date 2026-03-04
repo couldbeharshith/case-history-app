@@ -1,13 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ChatListItem } from "../lib/types";
 
+const MIN_WIDTH = 200;
+const MAX_WIDTH = 420;
+const DEFAULT_WIDTH = 272;
+const COLLAPSED_WIDTH = 56;
+
 export default function Sidebar() {
   const [chats, setChats] = useState<ChatListItem[]>([]);
   const [collapsed, setCollapsed] = useState(false);
+  const [width, setWidth] = useState(DEFAULT_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
+  const widthBeforeCollapse = useRef(DEFAULT_WIDTH);
   const pathname = usePathname();
 
   useEffect(() => {
@@ -16,6 +25,43 @@ export default function Sidebar() {
       .then(setChats)
       .catch(() => {});
   }, [pathname]);
+
+  // ── Drag-to-resize logic ──────────────────────────────────────────────
+  const startResizing = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, e.clientX));
+      setWidth(newWidth);
+    };
+    const handleMouseUp = () => setIsResizing(false);
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    // Prevent text selection while dragging
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [isResizing]);
+
+  // ── Collapse / expand ─────────────────────────────────────────────────
+  const toggleCollapse = () => {
+    if (collapsed) {
+      setCollapsed(false);
+      setWidth(widthBeforeCollapse.current);
+    } else {
+      widthBeforeCollapse.current = width;
+      setCollapsed(true);
+    }
+  };
 
   const activeChatId = pathname.startsWith("/chat/")
     ? pathname.split("/")[2]
@@ -40,12 +86,15 @@ export default function Sidebar() {
     return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
   };
 
+  const currentWidth = collapsed ? COLLAPSED_WIDTH : width;
+
   return (
     <aside
-      className={`h-screen flex flex-col transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-        collapsed ? "w-[56px]" : "w-[272px]"
-      }`}
+      ref={sidebarRef}
+      className="relative h-screen flex flex-col shrink-0"
       style={{
+        width: currentWidth,
+        transition: isResizing ? "none" : "width 0.3s cubic-bezier(0.16,1,0.3,1)",
         background: "var(--bg-secondary)",
         borderRight: "1px solid var(--border)",
       }}
@@ -79,7 +128,7 @@ export default function Sidebar() {
           </Link>
         )}
         <button
-          onClick={() => setCollapsed(!collapsed)}
+          onClick={toggleCollapse}
           className="p-2 rounded-lg transition-colors hover:bg-[var(--bg-tertiary)] cursor-pointer"
           style={{ color: "var(--text-muted)" }}
           title={collapsed ? "Expand" : "Collapse"}
@@ -242,6 +291,27 @@ export default function Sidebar() {
           }}
         >
           eCourts Intelligence Tool
+        </div>
+      )}
+
+      {/* Resize handle */}
+      {!collapsed && (
+        <div
+          onMouseDown={startResizing}
+          onDoubleClick={toggleCollapse}
+          className="absolute top-0 right-0 w-[5px] h-full cursor-col-resize group z-10"
+          style={{ transform: "translateX(50%)" }}
+        >
+          <div
+            className="absolute top-0 right-[2px] w-[1px] h-full transition-colors duration-150"
+            style={{
+              background: isResizing ? "var(--accent)" : "transparent",
+            }}
+          />
+          <div
+            className="absolute top-0 right-[2px] w-[1px] h-full transition-colors duration-150 group-hover:!bg-[var(--accent)]"
+            style={{ background: "transparent" }}
+          />
         </div>
       )}
     </aside>

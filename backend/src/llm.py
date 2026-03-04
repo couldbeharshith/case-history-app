@@ -92,13 +92,31 @@ def upload_fir_file(fir_url: str | None) -> str | None:
     if not fir_url:
         logger.info("FIR URL is None – skipping upload")
         return None
-    file_bytes = requests.get(fir_url, timeout=30).content
-    uploaded = client.files.create(
-        file=("fir.pdf", file_bytes, "application/pdf"),
-        purpose="user_data",
-    )
-    logger.debug("Uploaded FIR file, id=%s", uploaded.id)
-    return uploaded.id
+
+    try:
+        resp = requests.get(
+            fir_url,
+            timeout=30,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        resp.raise_for_status()
+
+        file_bytes = resp.content
+
+        if len(file_bytes) > 512 * 1024 * 1024:
+            raise ValueError("FIR file too large")
+
+        uploaded = client.files.create(
+            file=("fir.pdf", file_bytes, "application/pdf"),
+            purpose="user_data",
+        )
+
+        logger.debug("Uploaded FIR file, id=%s", uploaded.id)
+        return uploaded.id
+
+    except Exception as e:
+        logger.exception("FIR upload failed: %s", e)
+        return None
 
 
 def stream_summary(
