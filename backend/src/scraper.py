@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import base64
-import queue
+from queue import Queue
 import re
 
 from bs4 import BeautifulSoup
@@ -248,14 +248,14 @@ def scrape_case_data(cnr: str, *, headless: bool = False) -> dict:
 
 
 # ── Interactive orchestrator (SSE-driven) ────────────────────────────────────
-def _emit(eq: queue.Queue, type: SSEventType, content: str | None = None, metadata=None):
+def _emit(eq: Queue, type: SSEventType, content: str | None = None, metadata=None):
     eq.put(SSEvent(type=type, content=content, metadata=metadata))
 
 
 def scrape_case_data_interactive(
     cnr: str,
-    event_q: queue.Queue,
-    input_q: queue.Queue,
+    event_q: Queue,
+    input_q: Queue,
 ) -> dict:
     """Run the scraping pipeline with SSE progress events and manual-input pauses.
 
@@ -359,7 +359,11 @@ def scrape_case_data_interactive(
         fir_list_page = popup_info.value
         fir_list_page.wait_for_load_state("domcontentloaded")
         
-        if "not" in fir_list_page.locator("body > div > h1").inner_text().lower():
+        not_found_element = fir_list_page.locator("body > div > h1")
+        if (
+            not_found_element.is_visible() 
+            and "not" in not_found_element.inner_text().lower()
+            ):
             logger.warning("FIR PDF not found for given CNR number.")
             return {
                 "overview_img_b64": overview_img_b64,
