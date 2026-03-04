@@ -84,8 +84,14 @@ def build_summary_text(history: list[dict[str, str]]) -> str:
     return "\n".join(parts)
 
 
-def upload_fir_file(fir_url: str) -> str:
-    """Download the FIR PDF from a URL and upload it to the OpenAI files API. Returns the file_id."""
+def upload_fir_file(fir_url: str | None) -> str | None:
+    """Download the FIR PDF from a URL and upload it to the OpenAI files API.
+
+    Returns the file_id, or ``None`` when the FIR was not available.
+    """
+    if not fir_url:
+        logger.info("FIR URL is None – skipping upload")
+        return None
     file_bytes = requests.get(fir_url, timeout=30).content
     uploaded = client.files.create(
         file=("fir.pdf", file_bytes, "application/pdf"),
@@ -98,29 +104,30 @@ def upload_fir_file(fir_url: str) -> str:
 def stream_summary(
     overview_img_b64: str,
     history: list[dict],
-    file_id: str,
+    file_id: str | None,
 ) -> Generator[str, None, None]:
     """Yield summary text chunks as they stream from the LLM.
 
     Works identically for the CLI (print each chunk) and the API (yield to
-    StreamingResponse).
+    StreamingResponse).  When *file_id* is ``None`` (FIR not available) the
+    file attachment is simply omitted.
     """
+    user_content: list[dict] = [
+        {"type": "input_text", "text": build_summary_text(history)},
+        {
+            "type": "input_image",
+            "image_url": f"data:image/png;base64,{overview_img_b64}",
+            "detail": "high",
+        },
+    ]
+    if file_id:
+        user_content.append({"type": "input_file", "file_id": file_id})
+
     stream = client.responses.create(
         model="gpt-5-nano",
         input=[
             {"role": "system", "content": load_prompt(SUMMARY_PROMPT_FILE)},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": build_summary_text(history)},
-                    {
-                        "type": "input_image",
-                        "image_url": f"data:image/png;base64,{overview_img_b64}",
-                        "detail": "high",
-                    },
-                    {"type": "input_file", "file_id": file_id},
-                ],
-            },
+            {"role": "user", "content": user_content},
         ],
         reasoning={"effort": "low"},
         stream=True,
@@ -135,26 +142,29 @@ def stream_followup(
     summary: str,
     follow_up_messages: list[dict],
     overview_img_b64: str,
-    file_id: str,
+    file_id: str | None,
 ) -> Generator[str, None, None]:
     """Stream a follow-up answer, reconstructing full context each time.
 
     The LLM sees:
       1. System prompt
-      2. Rich context message (overview image + FIR PDF)
+      2. Rich context message (overview image + optional FIR PDF)
       3. Assistant message with the stored summary
       4. All follow-up user/assistant turns
     """
+    context_content: list[dict] = [
+        {
+            "type": "input_image",
+            "image_url": f"data:image/png;base64,{overview_img_b64}",
+            "detail": "high",
+        },
+    ]
+    if file_id:
+        context_content.append({"type": "input_file", "file_id": file_id})
+
     context_message: dict = {
         "role": "user",
-        "content": [
-            {
-                "type": "input_image",
-                "image_url": f"data:image/png;base64,{overview_img_b64}",
-                "detail": "high",
-            },
-            {"type": "input_file", "file_id": file_id},
-        ],
+        "content": context_content,
     }
 
     llm_input = [

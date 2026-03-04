@@ -25,7 +25,7 @@ export async function POST(
   });
   saveChat(chat);
 
-  // Stream from backend
+  // Stream SSE from backend
   const backendUrl = `${BACKEND_URL}/case-summary?cnr_num=${encodeURIComponent(cnr)}&chat_id=${encodeURIComponent(id)}`;
 
   try {
@@ -33,7 +33,6 @@ export async function POST(
 
     if (!backendRes.ok) {
       const errText = await backendRes.text();
-      // Don't save error as assistant message — roll back the user message
       chat.messages.pop();
       chat.updated_at = Date.now();
       saveChat(chat);
@@ -45,6 +44,9 @@ export async function POST(
 
     const reader = backendRes.body?.getReader();
     if (!reader) {
+      chat.messages.pop();
+      chat.updated_at = Date.now();
+      saveChat(chat);
       return new Response(JSON.stringify({ error: "No response body" }), {
         status: 502,
         headers: { "Content-Type": "application/json" },
@@ -53,38 +55,60 @@ export async function POST(
 
     const decoder = new TextDecoder();
     let fullText = "";
+    let sseBuffer = "";
 
     const stream = new ReadableStream({
       async pull(controller) {
         const { done, value } = await reader.read();
         if (done) {
-          // Save complete assistant message
-          chat.messages.push({
-            role: "assistant",
-            content: fullText,
-            timestamp: Date.now(),
-          });
+          // Save assistant message with accumulated summary
+          if (fullText) {
+            chat.messages.push({
+              role: "assistant",
+              content: fullText,
+              timestamp: Date.now(),
+            });
+          }
           chat.updated_at = Date.now();
           saveChat(chat);
           controller.close();
           return;
         }
-        const chunk = decoder.decode(value, { stream: true });
-        fullText += chunk;
-        controller.enqueue(new TextEncoder().encode(chunk));
+
+        const raw = decoder.decode(value, { stream: true });
+        sseBuffer += raw;
+
+        // Parse complete SSE events to accumulate text_chunk content
+        let idx: number;
+        while ((idx = sseBuffer.indexOf("\n\n")) !== -1) {
+          const eventStr = sseBuffer.slice(0, idx);
+          sseBuffer = sseBuffer.slice(idx + 2);
+          if (eventStr.startsWith("data: ")) {
+            try {
+              const evt = JSON.parse(eventStr.slice(6));
+              if (evt.type === "text_chunk" && evt.content) {
+                fullText += evt.content;
+              }
+            } catch {
+              // ignore parse errors
+            }
+          }
+        }
+
+        // Forward raw SSE bytes to browser
+        controller.enqueue(value);
       },
     });
 
     return new Response(stream, {
       headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Transfer-Encoding": "chunked",
+        "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
+        Connection: "keep-alive",
       },
     });
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : "Unknown error";
-    // Roll back the user message on failure
     chat.messages.pop();
     chat.updated_at = Date.now();
     saveChat(chat);

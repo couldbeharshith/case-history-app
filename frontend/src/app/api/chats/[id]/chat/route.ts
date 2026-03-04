@@ -33,15 +33,11 @@ export async function POST(
     const backendRes = await fetch(`${BACKEND_URL}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: id,
-        question,
-      }),
+      body: JSON.stringify({ chat_id: id, question }),
     });
 
     if (!backendRes.ok) {
       const errText = await backendRes.text();
-      // Roll back the user message — don't pollute history with failed turns
       chat.messages.pop();
       chat.updated_at = Date.now();
       saveChat(chat);
@@ -53,7 +49,6 @@ export async function POST(
 
     const reader = backendRes.body?.getReader();
     if (!reader) {
-      // Roll back the user message
       chat.messages.pop();
       chat.updated_at = Date.now();
       saveChat(chat);
@@ -65,12 +60,12 @@ export async function POST(
 
     const decoder = new TextDecoder();
     let fullText = "";
+    let sseBuffer = "";
 
     const stream = new ReadableStream({
       async pull(controller) {
         const { done, value } = await reader.read();
         if (done) {
-          // Save completed assistant message
           chat.messages.push({
             role: "assistant",
             content: fullText,
@@ -81,22 +76,41 @@ export async function POST(
           controller.close();
           return;
         }
-        const chunk = decoder.decode(value, { stream: true });
-        fullText += chunk;
-        controller.enqueue(new TextEncoder().encode(chunk));
+
+        const raw = decoder.decode(value, { stream: true });
+        sseBuffer += raw;
+
+        // Parse complete SSE events to accumulate text_chunk content
+        let idx: number;
+        while ((idx = sseBuffer.indexOf("\n\n")) !== -1) {
+          const eventStr = sseBuffer.slice(0, idx);
+          sseBuffer = sseBuffer.slice(idx + 2);
+          if (eventStr.startsWith("data: ")) {
+            try {
+              const evt = JSON.parse(eventStr.slice(6));
+              if (evt.type === "text_chunk" && evt.content) {
+                fullText += evt.content;
+              }
+            } catch {
+              // ignore
+            }
+          }
+        }
+
+        // Forward raw SSE bytes
+        controller.enqueue(value);
       },
     });
 
     return new Response(stream, {
       headers: {
-        "Content-Type": "text/plain; charset=utf-8",
-        "Transfer-Encoding": "chunked",
-        "X-Accel-Buffering": "no",
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
       },
     });
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : "Unknown error";
-    // Roll back the user message — don't leave an orphaned user turn with no reply
     chat.messages.pop();
     chat.updated_at = Date.now();
     saveChat(chat);
