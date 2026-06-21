@@ -159,7 +159,7 @@ function CaptchaModal({
         style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}
       >
         <h3 className="text-base font-bold mb-4" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
-          Solve Captcha (lowercase only)
+          Solve Captcha (lowercase)
         </h3>
 
         {errorMsg && (
