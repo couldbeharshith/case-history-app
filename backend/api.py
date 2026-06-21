@@ -66,6 +66,7 @@ def _sse_line(event: SSEvent) -> str:
 def case_summary(
     cnr_num: str = Query(...),
     chat_id: str = Query(...),
+    extract_fir: bool = Query(True),
 ):
     """Scrape case data with interactive SSE progress, then stream LLM summary."""
     event_q: queue.Queue[SSEvent | None] = queue.Queue()
@@ -74,7 +75,12 @@ def case_summary(
 
     def _run():
         try:
-            data = scrape_case_data_interactive(cnr_num, event_q, input_q)
+            data = scrape_case_data_interactive(
+                cnr_num,
+                event_q,
+                input_q,
+                extract_fir=extract_fir,
+            )
 
             # Save overview PNG
             chat = _chat_dir(chat_id)
@@ -91,6 +97,7 @@ def case_summary(
             # Initialise conv_history
             conv = {
                 "cnr_num": cnr_num,
+                "extract_fir": extract_fir,
                 "fir_file_url": fir_url,
                 "summary": "",
                 "messages": [],

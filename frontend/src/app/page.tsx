@@ -2,12 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useSidebar } from "../components/SidebarProvider";
 
 export default function HomePage() {
   const [cnr, setCnr] = useState("");
+  const [extractFir, setExtractFir] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
+  const { toggle: toggleSidebar } = useSidebar();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,7 +24,7 @@ export default function HomePage() {
       const res = await fetch("/api/chats", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cnr_num: trimmed }),
+        body: JSON.stringify({ cnr_num: trimmed, extract_fir: extractFir }),
       });
 
       if (!res.ok) {
@@ -38,7 +41,24 @@ export default function HomePage() {
   };
 
   return (
-    <div className="relative flex flex-col items-center justify-center h-screen px-6 overflow-hidden">
+    <div className="relative flex flex-col items-center justify-center h-screen px-4 md:px-6 overflow-hidden">
+      {/* Mobile hamburger pill */}
+      <button
+        onClick={toggleSidebar}
+        className="absolute top-3 left-3 p-2.5 rounded-full shadow-lg transition-colors hover:bg-[var(--bg-tertiary)] cursor-pointer md:hidden z-20"
+        style={{
+          color: "var(--text-muted)",
+          background: "rgba(17, 17, 17, 0.85)",
+          backdropFilter: "blur(12px)",
+          WebkitBackdropFilter: "blur(12px)",
+          border: "1px solid var(--border)",
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+        </svg>
+      </button>
+
       {/* Ambient background glow */}
       <div className="ambient-gradient absolute inset-0 pointer-events-none" />
 
@@ -69,7 +89,7 @@ export default function HomePage() {
 
           {/* Hero title */}
           <h1
-            className="text-6xl md:text-7xl font-extrabold tracking-tight leading-[0.95] mb-5"
+            className="text-4xl sm:text-6xl md:text-7xl font-extrabold tracking-tight leading-[0.95] mb-5"
             style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}
           >
             Case
@@ -177,6 +197,21 @@ export default function HomePage() {
                   )}
                 </button>
               </div>
+              <label className="flex items-center gap-3 px-5 pb-4 pt-1 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={extractFir}
+                  onChange={(e) => setExtractFir(e.target.checked)}
+                  disabled={loading}
+                  className="h-4 w-4 rounded border-[color:var(--border)] bg-transparent accent-[var(--accent)]"
+                />
+                <span
+                  className="text-sm"
+                  style={{ color: "var(--text-secondary)", fontFamily: "var(--font-body)" }}
+                >
+                  Extract FIR details
+                </span>
+              </label>
             </div>
 
             {error && (
@@ -196,7 +231,7 @@ export default function HomePage() {
 
         {/* Bottom hints */}
         <div
-          className="mt-10 flex items-center justify-center gap-6 animate-fade-in-up"
+          className="mt-8 md:mt-10 flex flex-wrap items-center justify-center gap-4 md:gap-6 animate-fade-in-up"
           style={{ animationDelay: "0.3s" }}
         >
           <div
@@ -209,7 +244,7 @@ export default function HomePage() {
             Secure lookup
           </div>
           <div
-            className="w-px h-3"
+            className="w-px h-3 hidden sm:block"
             style={{ background: "var(--border)" }}
           />
           <div
@@ -223,7 +258,7 @@ export default function HomePage() {
             Real-time streaming
           </div>
           <div
-            className="w-px h-3"
+            className="w-px h-3 hidden sm:block"
             style={{ background: "var(--border)" }}
           />
           <div

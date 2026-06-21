@@ -309,4 +309,42 @@ textarea:focus-visible {
   border-radius: 1px;
 }
 
+/* Scroll buttons — hidden by default, fade in via class */
+.scroll-btn {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.5);
+  height: 0;
+  width: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  border: none !important;
+  transition: opacity 0.25s ease, transform 0.25s ease, height 0.25s ease, width 0.25s ease;
+  will-change: opacity, transform;
+}
+.scroll-btn.scroll-btn-visible {
+  opacity: 0.8;
+  pointer-events: auto;
+  transform: scale(1);
+  height: 36px;
+  width: 36px;
+  border: 1px solid var(--border) !important;
+}
+.scroll-btn:hover {
+  opacity: 1 !important;
+}
+
+/* Mobile: hide sidebar by default via layout (handled by translate in component) */
+@media (max-width: 767px) {
+  /* Tighter markdown on mobile */
+  .markdown-body h1 { font-size: 1.35rem; }
+  .markdown-body h2 { font-size: 1.1rem; }
+  .markdown-body h3 { font-size: 1rem; }
+  .markdown-body { font-size: 14px; line-height: 1.7; }
+  .markdown-body table { font-size: 0.82em; }
+  .markdown-body th, .markdown-body td { padding: 0.4em 0.6em; }
+  .markdown-body pre { padding: 0.8em; font-size: 0.82em; }
+}
+
 

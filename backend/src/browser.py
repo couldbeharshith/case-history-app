@@ -30,13 +30,14 @@ _BROWSER_ARGS: list[str] = [
 class Browser:
     """Thin wrapper around Playwright that blocks unnecessary resources."""
 
-    __slots__ = ("_pw", "_browser", "_context", "page")
+    __slots__ = ("_pw", "_browser", "_context", "page", "_headless")
 
-    def __init__(self) -> None:
+    def __init__(self, headless: bool = False) -> None:
         self._pw = None
         self._browser = None
         self._context = None
         self.page = None
+        self._headless = headless
 
     @staticmethod
     def _route_handler(route) -> None:
@@ -56,8 +57,11 @@ class Browser:
 
         route.continue_()
 
-    def start(self, *, headless: bool = True) -> "Browser":
+    def start(self, *, headless: bool | None = None) -> "Browser":
         """Start browser instance with resource blocking enabled."""
+        if headless is None:
+            headless = self._headless
+
         self._pw = sync_playwright().start()
         self._browser = self._pw.chromium.launch(
             headless=headless,

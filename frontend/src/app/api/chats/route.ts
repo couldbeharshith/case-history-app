@@ -11,6 +11,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const body = await request.json();
   const cnr_num: string = body.cnr_num;
+  const extract_fir: boolean = body.extract_fir !== false;
 
   if (!cnr_num || typeof cnr_num !== "string") {
     return NextResponse.json({ error: "cnr_num is required" }, { status: 400 });
@@ -20,6 +21,7 @@ export async function POST(request: Request) {
     id: uuidv4(),
     cnr_num: cnr_num.trim().toUpperCase(),
     title: `Case ${cnr_num.trim().toUpperCase()}`,
+    extract_fir,
     messages: [],
     created_at: Date.now(),
     updated_at: Date.now(),

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Chat } from "../lib/types";
+import { useSidebar } from "./SidebarProvider";
 
 // ── SSE event types (mirrors backend SSEventType) ──────────────────────────
 interface SSEvent {
@@ -152,13 +153,13 @@ function CaptchaModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-0" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}>
       <div
-        className="rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-fade-in-up"
+        className="rounded-2xl p-5 sm:p-6 w-full max-w-sm shadow-2xl animate-fade-in-up"
         style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}
       >
         <h3 className="text-base font-bold mb-4" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
-          Solve Captcha
+          Solve Captcha (lowercase only)
         </h3>
 
         {errorMsg && (
@@ -232,9 +233,9 @@ function DistrictPsModal({ policeStation, onSubmit }: { policeStation?: string |
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-0" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}>
       <div
-        className="rounded-2xl p-6 w-full max-w-sm shadow-2xl animate-fade-in-up"
+        className="rounded-2xl p-5 sm:p-6 w-full max-w-sm shadow-2xl animate-fade-in-up"
         style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}
       >
         <h3 className="text-base font-bold mb-1" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
@@ -311,37 +312,37 @@ function DistrictPsModal({ policeStation, onSubmit }: { policeStation?: string |
 // ── Assistant bubble ───────────────────────────────────────────────────────
 function AssistantBubble({ content, isStreaming = false }: { content: string; isStreaming?: boolean }) {
   return (
-    <div className="flex items-start gap-4">
-      <div
-        className="w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-extrabold shrink-0 mt-0.5"
-        style={{ background: "var(--accent)", color: "var(--bg-primary)", fontFamily: "var(--font-display)" }}
-      >
-        CF
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-3">
-          <p className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>
-            CaseFlow
-          </p>
-          {isStreaming && <StreamingDots />}
+    <div>
+      {/* Header row: avatar + label */}
+      <div className="flex items-center gap-2.5 mb-3">
+        <div
+          className="w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center text-[10px] md:text-[11px] font-extrabold shrink-0"
+          style={{ background: "var(--accent)", color: "var(--bg-primary)", fontFamily: "var(--font-display)" }}
+        >
+          CF
         </div>
-        {content ? (
-          <div className="markdown-body text-[14px]">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-          </div>
-        ) : (
-          isStreaming && (
-            <div className="space-y-4 py-3">
-              {[90, 75, 60, 45].map((w, i) => (
-                <div key={i} className="h-4 rounded-lg animate-shimmer" style={{ width: `${w}%`, animationDelay: `${i * 0.15}s` }} />
-              ))}
-            </div>
-          )
-        )}
-        {!isStreaming && content && (
-          <div className="mt-2"><CopyButton text={content} /></div>
-        )}
+        <p className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>
+          CaseFlow
+        </p>
+        {isStreaming && <StreamingDots />}
       </div>
+      {/* Content — full width */}
+      {content ? (
+        <div className="markdown-body text-[14px]">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+        </div>
+      ) : (
+        isStreaming && (
+          <div className="space-y-4 py-3">
+            {[90, 75, 60, 45].map((w, i) => (
+              <div key={i} className="h-4 rounded-lg animate-shimmer" style={{ width: `${w}%`, animationDelay: `${i * 0.15}s` }} />
+            ))}
+          </div>
+        )
+      )}
+      {!isStreaming && content && (
+        <div className="mt-2"><CopyButton text={content} /></div>
+      )}
     </div>
   );
 }
@@ -349,18 +350,18 @@ function AssistantBubble({ content, isStreaming = false }: { content: string; is
 // ── User bubble ────────────────────────────────────────────────────────────
 function UserBubble({ content }: { content: string }) {
   return (
-    <div className="flex items-start gap-4">
-      <div
-        className="w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-bold shrink-0 mt-0.5"
-        style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)", border: "1px solid var(--border)", fontFamily: "var(--font-display)" }}
-      >
-        U
+    <div>
+      <div className="flex items-center gap-2.5 mb-1.5">
+        <div
+          className="w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center text-[10px] md:text-[11px] font-bold shrink-0"
+          style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)", border: "1px solid var(--border)", fontFamily: "var(--font-display)" }}
+        >
+          U
+        </div>
+        <p className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>You</p>
       </div>
-      <div>
-        <p className="text-[11px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>You</p>
-        <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>{content}</p>
-        <div className="mt-2"><CopyButton text={content} /></div>
-      </div>
+      <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>{content}</p>
+      <div className="mt-2"><CopyButton text={content} /></div>
     </div>
   );
 }
@@ -394,6 +395,45 @@ export default function ChatView({ chatId }: ChatViewProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
+  const { toggle: toggleSidebar } = useSidebar();
+
+  // Scroll tracking for scroll buttons
+  const [showScrollTop, setShowScrollTop] = useState(false);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distFromTop = el.scrollTop;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollTop(distFromTop > 150);
+    setShowScrollBottom(distFromBottom > 150);
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, [handleScroll]);
+
+  const scrollToTop = () => scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  const scrollToBottom = () => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+
+  // Re-evaluate scroll buttons after content loads/changes (runs AFTER auto-scroll)
+  useEffect(() => {
+    const t = setTimeout(handleScroll, 250);
+    return () => clearTimeout(t);
+  }, [chat?.messages, streamText, followUpStreamText, logSteps, handleScroll]);
+
+  // Auto-scroll on new content
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      // Immediately re-check scroll button visibility
+      handleScroll();
+    }
+  }, [streamText, followUpStreamText, chat?.messages, logSteps, handleScroll]);
 
   // Load chat data
   useEffect(() => {
@@ -449,7 +489,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
         }
         case "text_chunk": {
           // First text chunk means "Generating case summary" step is done
-          setCurrentStep(null);
+          setCurrentStep((prev) => (prev === null ? prev : null));
           setStreamText((prev) => prev + (evt.content ?? ""));
           break;
         }
@@ -466,7 +506,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
     setError(null);
     setStreamText("");
     setLogSteps([]);
-    setCurrentStep(null);
+    setCurrentStep((prev) => (prev === null ? prev : null));
 
     try {
       const res = await fetch(`/api/chats/${chatId}/stream`, { method: "POST" });
@@ -492,7 +532,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
       setChat(updatedChat);
       setStreamText("");
       setLogSteps([]);
-      setCurrentStep(null);
+      setCurrentStep((prev) => (prev === null ? prev : null));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -603,111 +643,130 @@ export default function ChatView({ chatId }: ChatViewProps) {
   const busyStreaming = isStreaming || isFollowingUp;
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col h-screen relative">
       {/* Modals */}
       {captchaModal && <CaptchaModal captchaImg={captchaModal.img} errorMsg={captchaModal.error} onSubmit={submitCaptcha} />}
       {showDistrictPsModal && <DistrictPsModal policeStation={districtPsHint} onSubmit={submitDistrictPs} />}
 
-      {/* Top bar */}
-      <header
-        className="h-[56px] shrink-0 flex items-center justify-between px-6"
-        style={{ background: "var(--bg-secondary)", borderBottom: "1px solid var(--border)" }}
-      >
-        <div className="flex items-center gap-3">
-          {busyStreaming && (
-            <div className="w-2 h-2 rounded-full animate-glow" style={{ background: "var(--accent)" }} />
-          )}
-          <h1 className="text-sm font-bold tracking-tight" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
-            {chat.title}
-          </h1>
-          {busyStreaming && (
-            <span
-              className="text-[10px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-md"
-              style={{ background: "var(--accent-glow)", color: "var(--accent)", fontFamily: "var(--font-body)" }}
+      {/* Floating header pills */}
+      <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
+        <div className="flex items-center justify-between px-3 md:px-5 pt-3 md:pt-4">
+          {/* Left pill: hamburger + title */}
+          <div
+            className="pointer-events-auto flex items-center gap-2 pl-1 pr-3 md:pl-3 md:pr-4 py-1.5 md:py-2 rounded-full shadow-lg"
+            style={{
+              background: "rgba(17, 17, 17, 0.85)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+              border: "1px solid var(--border)",
+            }}
+          >
+            {/* Hamburger — mobile only */}
+            <button
+              onClick={toggleSidebar}
+              className="p-1.5 rounded-lg transition-colors hover:bg-[var(--bg-tertiary)] cursor-pointer md:hidden shrink-0"
+              style={{ color: "var(--text-muted)" }}
             >
-              Live
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
+            {busyStreaming && (
+              <div className="w-1.5 h-1.5 rounded-full animate-glow shrink-0" style={{ background: "var(--accent)" }} />
+            )}
+            <h1 className="text-[13px] font-bold tracking-tight truncate max-w-[180px] md:max-w-none" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
+              {chat.title}
+            </h1>
+            {busyStreaming && (
+              <span
+                className="text-[9px] font-semibold uppercase tracking-widest px-1.5 py-0.5 rounded-md shrink-0"
+                style={{ background: "var(--accent-glow)", color: "var(--accent)", fontFamily: "var(--font-body)" }}
+              >
+                Live
+              </span>
+            )}
+          </div>
+          {/* Right pill: CNR badge */}
+          <div
+            className="pointer-events-auto px-2.5 md:px-3 py-1.5 md:py-2 rounded-full shadow-lg hidden sm:block"
+            style={{
+              background: "rgba(17, 17, 17, 0.85)",
+              backdropFilter: "blur(12px)",
+              WebkitBackdropFilter: "blur(12px)",
+              border: "1px solid var(--border-accent)",
+            }}
+          >
+            <span
+              className="text-[10px] md:text-xs font-medium"
+              style={{
+                color: "var(--accent)",
+                fontFamily: "var(--font-mono)",
+                letterSpacing: "0.03em",
+              }}
+            >
+              {chat.cnr_num}
             </span>
-          )}
+          </div>
         </div>
-        <span
-          className="text-xs px-3 py-1.5 rounded-lg font-medium"
-          style={{
-            background: "var(--bg-tertiary)",
-            color: "var(--text-muted)",
-            fontFamily: "var(--font-mono)",
-            letterSpacing: "0.04em",
-            border: "1px solid var(--border)",
-          }}
-        >
-          {chat.cnr_num}
-        </span>
-      </header>
+      </div>
 
       {/* Messages area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-6 py-10 pb-6">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-smooth">
+        <div className="max-w-3xl mx-auto px-4 md:px-6 pt-16 md:pt-20 pb-36 md:pb-40">
 
           {/* Initial user message */}
-          <div className="animate-fade-in-up mb-10">
-            <div className="flex items-start gap-4">
+          <div className="animate-fade-in-up mb-8 md:mb-10">
+            <div className="flex items-center gap-2.5 mb-1.5">
               <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-bold shrink-0 mt-0.5"
+                className="w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center text-[10px] md:text-[11px] font-bold shrink-0"
                 style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)", border: "1px solid var(--border)", fontFamily: "var(--font-display)" }}
               >
                 U
               </div>
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>
-                  You
-                </p>
-                <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-                  Generate case summary for{" "}
-                  <span
-                    className="font-semibold px-1.5 py-0.5 rounded-md"
-                    style={{ color: "var(--accent)", fontFamily: "var(--font-mono)", background: "var(--accent-glow)", fontSize: "0.85em", letterSpacing: "0.03em" }}
-                  >
-                    {chat.cnr_num}
-                  </span>
-                </p>
-              </div>
+              <p className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>
+                You
+              </p>
             </div>
+            <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+              Generate case summary for{" "}
+              <span
+                className="font-semibold px-1.5 py-0.5 rounded-md"
+                style={{ color: "var(--accent)", fontFamily: "var(--font-mono)", background: "var(--accent-glow)", fontSize: "0.85em", letterSpacing: "0.03em" }}
+              >
+                {chat.cnr_num}
+              </span>
+            </p>
           </div>
 
           {/* Separator */}
-          <div className="mb-10 animate-fade-in-up" style={{ animationDelay: "0.1s" }}>
+          <div className="mb-8 md:mb-10 animate-fade-in-up" style={{ animationDelay: "0.1s" }}>
             <div className="h-px w-full" style={{ background: "linear-gradient(90deg, transparent, var(--border), transparent)" }} />
           </div>
 
           {/* Progress log steps (during summary generation) */}
           {isStreaming && logSteps.length > 0 && !streamText && (
-            <div className="animate-fade-in-up mb-10" style={{ animationDelay: "0.15s" }}>
-              <div className="flex items-start gap-4">
+            <div className="animate-fade-in-up mb-8 md:mb-10" style={{ animationDelay: "0.15s" }}>
+              <div className="flex items-center gap-2.5 mb-2">
                 <div
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-extrabold shrink-0 mt-0.5"
+                  className="w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center text-[10px] md:text-[11px] font-extrabold shrink-0"
                   style={{ background: "var(--accent)", color: "var(--bg-primary)", fontFamily: "var(--font-display)" }}
                 >
                   CF
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-2">
-                    <p className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>
-                      CaseFlow
-                    </p>
-                    <StreamingDots />
-                  </div>
-                  <ProgressSteps steps={logSteps} currentStep={currentStep} />
-                </div>
+                <p className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>
+                  CaseFlow
+                </p>
+                <StreamingDots />
               </div>
+              <ProgressSteps steps={logSteps} currentStep={currentStep} />
             </div>
           )}
 
           {/* Initial summary streaming (after text_chunk starts) */}
           {(isStreaming && streamText) && (
-            <div className="animate-fade-in-up mb-10" style={{ animationDelay: "0.2s" }}>
-              {/* Show completed steps above the text */}
+            <div className="animate-fade-in-up mb-8 md:mb-10" style={{ animationDelay: "0.2s" }}>
               {logSteps.length > 0 && (
-                <div className="mb-6 flex items-start gap-4">
-                  <div className="w-8 shrink-0" />
+                <div className="mb-6">
                   <ProgressSteps steps={logSteps} currentStep={null} />
                 </div>
               )}
@@ -724,7 +783,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
             if (isLastAssistant) return null;
 
             return (
-              <div key={idx} className="animate-fade-in-up mb-10">
+              <div key={idx} className="animate-fade-in-up mb-8 md:mb-10">
                 {msg.role === "assistant" ? (
                   <AssistantBubble content={msg.content} />
                 ) : (
@@ -736,7 +795,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
 
           {/* Live follow-up stream */}
           {isFollowingUp && (
-            <div className="animate-fade-in-up mb-10">
+            <div className="animate-fade-in-up mb-8 md:mb-10">
               <AssistantBubble content={followUpStreamText} isStreaming={true} />
             </div>
           )}
@@ -744,10 +803,10 @@ export default function ChatView({ chatId }: ChatViewProps) {
           {/* Error state */}
           {error && (
             <div
-              className="mt-8 rounded-xl overflow-hidden animate-fade-in-up"
+              className="mt-6 md:mt-8 rounded-xl overflow-hidden animate-fade-in-up"
               style={{ background: "rgba(239, 68, 68, 0.06)", border: "1px solid rgba(239, 68, 68, 0.12)" }}
             >
-              <div className="px-5 py-4 flex items-start gap-3">
+              <div className="px-4 md:px-5 py-3 md:py-4 flex items-start gap-3">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
                   <circle cx="12" cy="12" r="10" />
                   <line x1="12" y1="8" x2="12" y2="12" />
@@ -767,16 +826,42 @@ export default function ChatView({ chatId }: ChatViewProps) {
         </div>
       </div>
 
-      {/* Follow-up input bar — shown once the initial summary is done */}
-      {summaryDone && (
-        <div
-          className="shrink-0 px-6 py-4"
-          style={{ borderTop: "1px solid var(--border)", background: "var(--bg-secondary)" }}
+      {/* Scroll buttons — stacked bottom-right */}
+      <div className="absolute right-3 md:right-5 bottom-20 md:bottom-24 z-10 flex flex-col items-center gap-1.5">
+        <button
+          onClick={scrollToTop}
+          className={`scroll-btn rounded-full flex items-center justify-center cursor-pointer ${showScrollTop ? "scroll-btn-visible" : ""}`}
+          style={{ background: "var(--bg-secondary)", color: "var(--text-muted)", boxShadow: showScrollTop ? "0 2px 10px rgba(0,0,0,0.4)" : "none" }}
+          aria-label="Scroll to top"
         >
-          <div className="max-w-3xl mx-auto">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="18 15 12 9 6 15" />
+          </svg>
+        </button>
+        <button
+          onClick={scrollToBottom}
+          className={`scroll-btn rounded-full flex items-center justify-center cursor-pointer ${showScrollBottom ? "scroll-btn-visible" : ""}`}
+          style={{ background: "var(--bg-secondary)", color: "var(--text-muted)", boxShadow: showScrollBottom ? "0 2px 10px rgba(0,0,0,0.4)" : "none" }}
+          aria-label="Scroll to bottom"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Floating follow-up input — shown once the initial summary is done */}
+      {summaryDone && (
+        <div className="absolute bottom-0 left-0 right-0 pointer-events-none pb-4 md:pb-5 px-3 md:px-6">
+          <div className="max-w-3xl mx-auto pointer-events-auto">
             <div
-              className="flex items-end gap-3 rounded-xl px-4 py-3"
-              style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border)" }}
+              className="flex items-end gap-2 md:gap-3 rounded-2xl px-3 md:px-4 py-2.5 md:py-3 shadow-2xl"
+              style={{
+                background: "var(--bg-secondary)",
+                border: "1px solid var(--border)",
+                boxShadow: "0 -8px 32px rgba(0,0,0,0.4), 0 0 0 1px var(--border)",
+                backdropFilter: "blur(12px)",
+              }}
             >
               <textarea
                 ref={inputRef}
@@ -785,7 +870,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
                 onChange={(e) => {
                   setInputValue(e.target.value);
                   e.target.style.height = "auto";
-                  e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
+                  e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
                 }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
@@ -793,7 +878,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
                     sendFollowUp();
                   }
                 }}
-                placeholder="Ask a follow-up question about this case…"
+                placeholder="Ask a follow-up…"
                 disabled={busyStreaming}
                 className="flex-1 bg-transparent resize-none outline-none focus:outline-none text-sm leading-relaxed"
                 style={{
@@ -801,7 +886,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
                   fontFamily: "var(--font-body)",
                   caretColor: "var(--accent)",
                   minHeight: "24px",
-                  maxHeight: "160px",
+                  maxHeight: "120px",
                   overflow: "hidden",
                 }}
               />
@@ -825,9 +910,6 @@ export default function ChatView({ chatId }: ChatViewProps) {
                 )}
               </button>
             </div>
-            <p className="text-[11px] mt-2 text-center" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>
-              Press Enter to send · Shift+Enter for new line
-            </p>
           </div>
         </div>
       )}

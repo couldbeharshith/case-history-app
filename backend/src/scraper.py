@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import Page
 
 from src.browser import Browser
-from src.config import CASE_URL, FIR_URL, MAX_CAPTCHA_RETRIES, get_logger
+from src.config import CASE_URL, FIR_URL, HEADLESS, MAX_CAPTCHA_RETRIES, get_logger
 from src.llm import ask_llm_options, solve_captcha
 from src.district import get_district_and_ps
 from src.models import SSEvent, SSEventType
@@ -60,6 +60,23 @@ def get_fir_details(fir_rows: list[list]) -> tuple[str, str, str]:
     num = num_row[1].strip().zfill(4)
     year = year_row[1].strip()
     return police_stn, num, year
+
+
+def _try_get_fir_details(page: Page) -> tuple[str, str, str] | None:
+    """Return FIR details when the case page exposes them, otherwise None."""
+    fir_table = page.locator("table.FIR_details_table")
+    if fir_table.count() == 0:
+        return None
+
+    try:
+        fir_html = fir_table.inner_html()
+        fir_rows = html_table_to_rows(fir_html)
+        if len(fir_rows) < 3:
+            return None
+        return get_fir_details(fir_rows)
+    except Exception as exc:
+        logger.warning("Failed to parse FIR details: %s", exc)
+        return None
 
 
 # ── Captcha + CNR entry ──────────────────────────────────────────────────────
@@ -149,14 +166,6 @@ def _lookup_fir_pdf_url(
         'el => Array.from(el.options).slice(1).map(o => o.textContent.trim()).join(",")',
     )
     
-    #NOTE: LLM is expensive, try exact match 
-    # district = ask_llm_options(
-    #     options=district_options,
-    #     ps=police_stn,
-    #     prompt="Help me choose my district using my police station given to you"
-    #     " **STRICTLY** from the options given to you",
-    # )
-    
     district, ps = get_district_and_ps(police_stn)
     
     logger.debug("District options (truncated): %s", district_options[:50])
@@ -169,14 +178,6 @@ def _lookup_fir_pdf_url(
         "#ps_id",
         'el => Array.from(el.options).slice(1).map(o => o.textContent.trim()).join(",")',
     )
-    
-    #NOTE: LLM is expensive, try exact match 
-    # ps = ask_llm_options(
-    #     options=ps_options,
-    #     ps=police_stn,
-    #     prompt="Help me choose the correct spelling of my police station"
-    #     " **STRICTLY** from the options given to you",
-    # )
     
     logger.debug("PS options (truncated): %s", ps_options[:65])
     logger.info("Selected police station: %s", ps)
@@ -204,7 +205,12 @@ def _lookup_fir_pdf_url(
 
 
 # ── Public orchestrator ──────────────────────────────────────────────────────
-def scrape_case_data(cnr: str, *, headless: bool = False) -> dict:
+def scrape_case_data(
+    cnr: str,
+    *,
+    headless: bool | None = None,
+    extract_fir: bool = True,
+) -> dict:
     """Run the full scraping pipeline for a CNR number.
 
     Returns a dict with keys:
@@ -213,8 +219,10 @@ def scrape_case_data(cnr: str, *, headless: bool = False) -> dict:
         - fir_file_url      (str)
     """
     logger.info("Starting scrape for CNR: %s", cnr)
+    if headless is None:
+        headless = HEADLESS
 
-    with Browser() as b:
+    with Browser(headless=headless) as b:
         page = b.page
 
         # eCourts: enter CNR + captcha
@@ -228,16 +236,23 @@ def scrape_case_data(cnr: str, *, headless: bool = False) -> dict:
             page.locator("#history_cnr").screenshot()
         ).decode("utf-8")
 
-        # FIR details
-        fir_html = page.locator("table.FIR_details_table").inner_html()
-        police_stn, fir_num, fir_year = get_fir_details(html_table_to_rows(fir_html))
-        logger.debug(f"FIR details: station={police_stn}, num={fir_num}, year={fir_year}")
-
         # Case history
         history = _extract_history(page)
 
-        # FIR PDF
-        fir_file_url = _lookup_fir_pdf_url(page, police_stn, fir_num, fir_year)
+        fir_file_url = None
+        if extract_fir:
+            fir_details = _try_get_fir_details(page)
+            if fir_details is None:
+                logger.warning("FIR details missing for CNR %s; continuing without FIR", cnr)
+            else:
+                police_stn, fir_num, fir_year = fir_details
+                logger.debug(
+                    f"FIR details: station={police_stn}, num={fir_num}, year={fir_year}"
+                )
+                try:
+                    fir_file_url = _lookup_fir_pdf_url(page, police_stn, fir_num, fir_year)
+                except Exception as exc:
+                    logger.warning("FIR lookup failed for CNR %s: %s", cnr, exc)
 
     logger.info("Scrape complete for CNR: %s", cnr)
     return {
@@ -256,6 +271,8 @@ def scrape_case_data_interactive(
     cnr: str,
     event_q: Queue,
     input_q: Queue,
+    *,
+    extract_fir: bool = True,
 ) -> dict:
     """Run the scraping pipeline with SSE progress events and manual-input pauses.
 
@@ -266,7 +283,7 @@ def scrape_case_data_interactive(
 
     _emit(event_q, SSEventType.SUMMARY_LOG, "Thinking")
 
-    with Browser() as b:
+    with Browser(headless=HEADLESS) as b:
         page = b.page
 
         _emit(event_q, SSEventType.SUMMARY_LOG, "Starting gathering of case info")
@@ -323,61 +340,78 @@ def scrape_case_data_interactive(
             page.locator("#history_cnr").screenshot()
         ).decode("utf-8")
 
-        fir_html = page.locator("#history_cnr > table.FIR_details_table.table.table_o").inner_html()
-        police_stn, fir_num, fir_year = get_fir_details(html_table_to_rows(fir_html))
-        logger.debug("FIR details: station=%s, num=%s, year=%s", police_stn, fir_num, fir_year)
-
         history = _extract_history(page)
 
-        # ── FIR PDF lookup (user picks district / PS) ────────────────
-        _emit(event_q, SSEventType.SUMMARY_LOG, "Loading FIR details")
-        page.goto(FIR_URL, wait_until="domcontentloaded")
+        fir_file_url = None
+        if extract_fir:
+            fir_details = _try_get_fir_details(page)
+            if fir_details is None:
+                _emit(
+                    event_q,
+                    SSEventType.SUMMARY_LOG,
+                    "FIR not available — generating summary without it",
+                )
+            else:
+                police_stn, fir_num, fir_year = fir_details
+                try:
+                    # ── FIR PDF lookup (user picks district / PS) ────────────────
+                    _emit(event_q, SSEventType.SUMMARY_LOG, "Loading FIR details")
+                    page.goto(FIR_URL, wait_until="domcontentloaded")
 
-        _emit(event_q, SSEventType.SUMMARY_LOG, "Requesting user to select FIR police station and district")
-        _emit(
-            event_q,
-            SSEventType.MANUAL_INPUT_REQUEST,
-            metadata={"type": "district_ps", "police_station": police_stn},
-        )
+                    _emit(
+                        event_q,
+                        SSEventType.SUMMARY_LOG,
+                        "Requesting user to select FIR police station and district",
+                    )
+                    _emit(
+                        event_q,
+                        SSEventType.MANUAL_INPUT_REQUEST,
+                        metadata={"type": "district_ps", "police_station": police_stn},
+                    )
 
-        user_resp = input_q.get()  # blocks
-        district: str = user_resp["district"]
-        ps: str = user_resp["ps"]
-        logger.info("User selected district=%s, ps=%s", district, ps)
+                    user_resp = input_q.get()  # blocks
+                    district: str = user_resp["district"]
+                    ps: str = user_resp["ps"]
+                    logger.info("User selected district=%s, ps=%s", district, ps)
 
-        page.select_option("#district_id", label=district)
-        page.wait_for_function("() => document.querySelector('#ps_id').options.length > 1")
-        page.select_option("#ps_id", label=ps)
+                    page.select_option("#district_id", label=district)
+                    page.wait_for_function("() => document.querySelector('#ps_id').options.length > 1")
+                    page.select_option("#ps_id", label=ps)
 
-        page.type("#fir_num", fir_num)
-        page.type("#captcha", page.locator("div.captcha").inner_text())
-        page.select_option("#year", label=fir_year)
+                    page.type("#fir_num", fir_num)
+                    page.type("#captcha", page.locator("div.captcha").inner_text())
+                    page.select_option("#year", label=fir_year)
 
-        with page.expect_popup() as popup_info:
-            page.click("input.btn.btn-primary.btn-lg.pull-right.btnfir")
-            
-        fir_list_page = popup_info.value
-        fir_list_page.wait_for_load_state("domcontentloaded")
-        
-        not_found_element = fir_list_page.locator("body > div > h1")
-        if (
-            not_found_element.is_visible() 
-            and "not" in not_found_element.inner_text().lower()
-            ):
-            logger.warning("FIR PDF not found for given CNR number.")
-            return {
-                "overview_img_b64": overview_img_b64,
-                "history": history,
-                "fir_file_url": None,
-            }
+                    with page.expect_popup() as popup_info:
+                        page.click("input.btn.btn-primary.btn-lg.pull-right.btnfir")
 
-        with fir_list_page.expect_popup() as popup_info:
-            fir_list_page.click("a.btn")
-        fir_pdf_page = popup_info.value
-        fir_pdf_page.wait_for_load_state()
+                    fir_list_page = popup_info.value
+                    fir_list_page.wait_for_load_state("domcontentloaded")
 
-        fir_file_url = fir_pdf_page.url
-        logger.info("FIR PDF URL: %s", fir_file_url)
+                    not_found_element = fir_list_page.locator("body > div > h1")
+                    if (
+                        not_found_element.is_visible()
+                        and "not" in not_found_element.inner_text().lower()
+                    ):
+                        logger.warning("FIR PDF not found for given CNR number.")
+                        fir_file_url = None
+                    else:
+                        with fir_list_page.expect_popup() as popup_info:
+                            fir_list_page.click("a.btn")
+                        fir_pdf_page = popup_info.value
+                        fir_pdf_page.wait_for_load_state()
+
+                        fir_file_url = fir_pdf_page.url
+                        logger.info("FIR PDF URL: %s", fir_file_url)
+                except Exception as exc:
+                    logger.warning("FIR extraction failed; continuing without FIR: %s", exc)
+                    _emit(
+                        event_q,
+                        SSEventType.SUMMARY_LOG,
+                        "FIR not available — generating summary without it",
+                    )
+        else:
+            _emit(event_q, SSEventType.SUMMARY_LOG, "Skipping FIR extraction per user preference")
 
     logger.info("Interactive scrape complete for CNR: %s", cnr)
     return {

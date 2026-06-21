@@ -35,6 +35,7 @@ SUMMARY_PROMPT_FILE = _PROMPTS_DIR / "summary_prompt.md"
 OPTIONS_PROMPT_FILE = _PROMPTS_DIR / "options_prompt.md"
 
 MAX_CAPTCHA_RETRIES = 3
+HEADLESS = os.getenv("HEADLESS", "0").lower() in ("1", "true", "yes", "y")
 
 # Global OA client instance
 client = OpenAI()

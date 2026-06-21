@@ -7,6 +7,7 @@ export interface ChatMessage {
 export interface Chat {
   id: string;
   cnr_num: string;
+  extract_fir?: boolean;
   title: string;
   messages: ChatMessage[];
   created_at: number;

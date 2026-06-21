@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ChatListItem } from "../lib/types";
+import { useSidebar } from "./SidebarProvider";
 
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 420;
@@ -18,6 +19,16 @@ export default function Sidebar() {
   const sidebarRef = useRef<HTMLElement>(null);
   const widthBeforeCollapse = useRef(DEFAULT_WIDTH);
   const pathname = usePathname();
+  const { open: mobileOpen, close: closeMobile } = useSidebar();
+
+  // Mobile detection
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   useEffect(() => {
     fetch("/api/chats")
@@ -74,6 +85,45 @@ export default function Sidebar() {
     setChats((prev) => prev.filter((c) => c.id !== id));
   };
 
+  const handleRename = async (e: React.MouseEvent, id: string, currentTitle: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const newTitle = prompt("Rename case:", currentTitle);
+    if (!newTitle || newTitle.trim() === currentTitle) return;
+    try {
+      const res = await fetch(`/api/chats/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: newTitle.trim() }),
+      });
+      if (res.ok) {
+        setChats((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, title: newTitle.trim() } : c))
+        );
+      }
+    } catch { /* ignore */ }
+  };
+
+  // 3-dot menu state
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpenId) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpenId(null);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("touchstart", handler as EventListener);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("touchstart", handler as EventListener);
+    };
+  }, [menuOpenId]);
+
   const formatDate = (ts: number) => {
     const d = new Date(ts);
     const now = new Date();
@@ -89,16 +139,33 @@ export default function Sidebar() {
   const currentWidth = collapsed ? COLLAPSED_WIDTH : width;
 
   return (
-    <aside
-      ref={sidebarRef}
-      className="relative h-screen flex flex-col shrink-0"
-      style={{
-        width: currentWidth,
-        transition: isResizing ? "none" : "width 0.3s cubic-bezier(0.16,1,0.3,1)",
-        background: "var(--bg-secondary)",
-        borderRight: "1px solid var(--border)",
-      }}
-    >
+    <>
+      {/* Mobile backdrop — always mounted, visibility via opacity */}
+      <div
+        className={`fixed inset-0 z-40 md:hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+          mobileOpen
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none"
+        }`}
+        style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
+        onClick={closeMobile}
+      />
+
+      <aside
+        ref={sidebarRef}
+        className={`
+          relative h-screen flex flex-col shrink-0
+          max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50
+          max-md:transition-transform max-md:duration-300 max-md:ease-[cubic-bezier(0.16,1,0.3,1)]
+          ${mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"}
+        `}
+        style={{
+          width: isMobile ? 280 : currentWidth,
+          transition: isResizing ? "none" : "width 0.3s cubic-bezier(0.16,1,0.3,1)",
+          background: "var(--bg-secondary)",
+          borderRight: "1px solid var(--border)",
+        }}
+      >
       {/* Header */}
       <div
         className="flex items-center justify-between px-3 h-[56px] shrink-0"
@@ -127,12 +194,25 @@ export default function Sidebar() {
             </span>
           </Link>
         )}
-        <button
-          onClick={toggleCollapse}
-          className="p-2 rounded-lg transition-colors hover:bg-[var(--bg-tertiary)] cursor-pointer"
-          style={{ color: "var(--text-muted)" }}
-          title={collapsed ? "Expand" : "Collapse"}
-        >
+        <div className="flex items-center gap-1">
+          {/* Close button — mobile only */}
+          <button
+            onClick={closeMobile}
+            className="p-2 rounded-lg transition-colors hover:bg-[var(--bg-tertiary)] cursor-pointer md:hidden"
+            style={{ color: "var(--text-muted)" }}
+            title="Close"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+          {/* Collapse button — desktop only */}
+          <button
+            onClick={toggleCollapse}
+            className="p-2 rounded-lg transition-colors hover:bg-[var(--bg-tertiary)] cursor-pointer hidden md:flex"
+            style={{ color: "var(--text-muted)" }}
+            title={collapsed ? "Expand" : "Collapse"}
+          >
           <svg
             width="16"
             height="16"
@@ -151,6 +231,7 @@ export default function Sidebar() {
             <polyline points="18 17 13 12 18 7" />
           </svg>
         </button>
+        </div>
       </div>
 
       {/* New Lookup button */}
@@ -229,6 +310,8 @@ export default function Sidebar() {
                       activeChatId === chat.id
                         ? "2px solid var(--accent)"
                         : "2px solid transparent",
+                    position: "relative",
+                    zIndex: menuOpenId === chat.id ? 50 : "auto",
                   }}
                 >
                   <div className="flex-1 min-w-0">
@@ -252,26 +335,53 @@ export default function Sidebar() {
                       {formatDate(chat.updated_at)}
                     </p>
                   </div>
-                  <button
-                    onClick={(e) => handleDelete(e, chat.id)}
-                    className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg transition-all hover:bg-[var(--bg-elevated)] cursor-pointer"
-                    style={{ color: "var(--text-muted)" }}
-                    title="Delete"
-                  >
-                    <svg
-                      width="13"
-                      height="13"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
+                  <div className="relative" ref={menuOpenId === chat.id ? menuRef : undefined}>
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setMenuOpenId(menuOpenId === chat.id ? null : chat.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg transition-all hover:bg-[var(--bg-elevated)] cursor-pointer"
+                      style={{ color: "var(--text-muted)" }}
+                      title="Options"
                     >
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
-                  </button>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" />
+                      </svg>
+                    </button>
+                    {menuOpenId === chat.id && (
+                      <div
+                        className="absolute right-0 top-full mt-1 z-50 min-w-[130px] rounded-xl py-1 shadow-xl animate-scale-in"
+                        style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          onClick={(e) => { setMenuOpenId(null); handleRename(e, chat.id, chat.title); }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-left transition-colors hover:bg-[var(--bg-tertiary)] cursor-pointer"
+                          style={{ color: "var(--text-secondary)", fontFamily: "var(--font-body)" }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                          </svg>
+                          Rename
+                        </button>
+                        <button
+                          onClick={(e) => { setMenuOpenId(null); handleDelete(e, chat.id); }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-left transition-colors hover:bg-[var(--bg-tertiary)] cursor-pointer"
+                          style={{ color: "var(--danger)", fontFamily: "var(--font-body)" }}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          </svg>
+                          Delete
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </Link>
               ))}
             </div>
@@ -282,7 +392,7 @@ export default function Sidebar() {
       {/* Footer */}
       {!collapsed && (
         <div
-          className="px-4 py-3 text-[10px] tracking-wide uppercase font-medium"
+          className="px-4 py-3 text-[10px] tracking-wide uppercase font-medium hidden md:block"
           style={{
             borderTop: "1px solid var(--border)",
             color: "var(--text-muted)",
@@ -294,12 +404,12 @@ export default function Sidebar() {
         </div>
       )}
 
-      {/* Resize handle */}
+      {/* Resize handle — desktop only */}
       {!collapsed && (
         <div
           onMouseDown={startResizing}
           onDoubleClick={toggleCollapse}
-          className="absolute top-0 right-0 w-[5px] h-full cursor-col-resize group z-10"
+          className="absolute top-0 right-0 w-[5px] h-full cursor-col-resize group z-10 hidden md:block"
           style={{ transform: "translateX(50%)" }}
         >
           <div
@@ -315,5 +425,6 @@ export default function Sidebar() {
         </div>
       )}
     </aside>
+    </>
   );
 }

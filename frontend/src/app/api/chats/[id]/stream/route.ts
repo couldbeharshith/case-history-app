@@ -16,6 +16,7 @@ export async function POST(
   }
 
   const cnr = chat.cnr_num;
+  const extractFir = chat.extract_fir ?? true;
 
   // Add user message
   chat.messages.push({
@@ -26,7 +27,7 @@ export async function POST(
   saveChat(chat);
 
   // Stream SSE from backend
-  const backendUrl = `${BACKEND_URL}/case-summary?cnr_num=${encodeURIComponent(cnr)}&chat_id=${encodeURIComponent(id)}`;
+  const backendUrl = `${BACKEND_URL}/case-summary?cnr_num=${encodeURIComponent(cnr)}&chat_id=${encodeURIComponent(id)}&extract_fir=${extractFir}`;
 
   try {
     const backendRes = await fetch(backendUrl);
