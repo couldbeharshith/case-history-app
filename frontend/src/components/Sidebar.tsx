@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, type CSSProperties } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { announceChatUpdate, subscribeToChatUpdates } from "../lib/chat-updates";
 import type { ChatListItem } from "../lib/types";
 import { useSidebar } from "./SidebarProvider";
 
@@ -31,6 +32,11 @@ export default function Sidebar() {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
   const { open: mobileOpen, close: closeMobile } = useSidebar();
+
+  useEffect(() => subscribeToChatUpdates((entry) => {
+    setChats((current) => [entry, ...current.filter((chat) => chat.id !== entry.id)]
+      .sort((first, second) => second.updated_at - first.updated_at));
+  }), []);
 
   useEffect(() => {
     const request = new AbortController();
@@ -108,7 +114,8 @@ export default function Sidebar() {
         body: JSON.stringify({ title }),
       });
       if (response.ok) {
-        setChats((previous) => previous.map((chat) => (chat.id === id ? { ...chat, title } : chat)));
+        const updated: ChatListItem = await response.json();
+        announceChatUpdate(updated);
       }
     } catch { /* Keep the current title. */ }
   }

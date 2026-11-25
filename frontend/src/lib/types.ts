@@ -9,6 +9,7 @@ export interface Chat {
   cnr_num: string;
   extract_fir?: boolean;
   title: string;
+  title_source?: "generated" | "manual";
   messages: ChatMessage[];
   created_at: number;
   updated_at: number;

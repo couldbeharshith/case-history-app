@@ -6,6 +6,7 @@ import Image from "next/image";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { readEvents, streamError, type CaseStreamEvent } from "../lib/case-stream";
+import { announceChatUpdate, subscribeToChatUpdates } from "../lib/chat-updates";
 import type { Chat, ChatMessage } from "../lib/types";
 import { useSidebar } from "./SidebarProvider";
 
@@ -465,6 +466,15 @@ export default function ChatView({ chatId }: ChatViewProps) {
     return () => observer.disconnect();
   }, [hasChat]);
 
+  useEffect(() => subscribeToChatUpdates((entry) => {
+    if (entry.id === chatId) {
+      setChat((current) => current && current.title !== entry.title
+        ? { ...current, title: entry.title }
+        : current
+      );
+    }
+  }), [chatId]);
+
   // Load chat data
   useEffect(() => {
     const request = new AbortController();
@@ -564,6 +574,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
       if (!response.ok) throw new Error("Couldn’t reload the saved case.");
       const updatedChat: Chat = await response.json();
       setChat(updatedChat);
+      announceChatUpdate(updatedChat);
       setStreamText("");
       setLogSteps([]);
       setCurrentStep((prev) => (prev === null ? prev : null));
@@ -635,6 +646,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
       if (!response.ok) throw new Error("Couldn’t reload the saved case.");
       const updatedChat: Chat = await response.json();
       setChat(updatedChat);
+      announceChatUpdate(updatedChat);
       setFollowUpStreamText("");
     } catch (err) {
       if (request.signal.aborted) return;

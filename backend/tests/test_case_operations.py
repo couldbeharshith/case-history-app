@@ -33,6 +33,11 @@ class CaseApiTests(unittest.TestCase):
         self.data_dir = Path(temporary.name)
         self.client = self.enterContext(TestClient(create_app(self.data_dir)))
         self.store = ConversationStore(self.data_dir)
+        self.name_case = self.enterContext(
+            patch(
+                "src.cases.generate_case_title", return_value="Example property appeal"
+            )
+        )
 
     def test_summary_and_followup_save_complete_turns(self):
         with (
@@ -47,6 +52,10 @@ class CaseApiTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(events(response)[-1]["type"], "complete")
+        self.assertEqual(
+            events(response)[-1]["metadata"], {"title": "Example property appeal"}
+        )
+        self.name_case.assert_called_once_with("Case summary", "ABC123")
 
         with patch(
             "src.cases.stream_followup",
@@ -59,6 +68,7 @@ class CaseApiTests(unittest.TestCase):
         conversation = self.store.read("case-1")
         self.assertEqual(conversation.cnr_num, "ABC123")
         self.assertEqual(conversation.summary, "Case summary")
+        self.assertEqual(conversation.title, "Example property appeal")
         self.assertEqual(
             [message.content for message in conversation.messages],
             ["When?", "The next hearing"],
