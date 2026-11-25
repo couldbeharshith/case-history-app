@@ -435,6 +435,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
   const followLatest = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
@@ -767,7 +768,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
       )}
 
       {/* Floating header pills */}
-      <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
+      <div className="case-toolbar absolute top-0 left-0 right-0 z-20 pointer-events-none">
         <div className="flex items-center justify-between gap-2 px-3 md:px-5 pt-3 md:pt-4">
           {/* Left pill: hamburger + title */}
           <div
@@ -809,12 +810,17 @@ export default function ChatView({ chatId }: ChatViewProps) {
               </span>
             )}
           </div>
-          <CaseActions chat={chat} summary={summaryDone ? summary : undefined} onStop={isStreaming ? stopLookup : undefined} />
+          <CaseActions
+            chat={chat}
+            summary={summaryDone ? summary : undefined}
+            summaryRef={summaryRef}
+            onStop={isStreaming ? stopLookup : undefined}
+          />
         </div>
       </div>
 
       {/* Messages area */}
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} onScroll={handleScroll} data-case-viewport className="flex-1 overflow-y-auto">
         <div ref={contentRef} className="max-w-3xl mx-auto px-4 md:px-6 pt-16 md:pt-20 pb-36 md:pb-40">
 
           {/* Initial user message */}
@@ -878,7 +884,11 @@ export default function ChatView({ chatId }: ChatViewProps) {
             if (isLastAssistant) return null;
 
             return (
-              <div key={idx} className="mb-8 md:mb-10">
+              <div
+                key={idx}
+                ref={msg === summary ? summaryRef : undefined}
+                className={msg === summary ? "case-summary mb-8 md:mb-10" : "mb-8 md:mb-10"}
+              >
                 {msg.role === "assistant" ? (
                   <AssistantBubble content={msg.content} />
                 ) : (

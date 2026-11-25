@@ -266,6 +266,11 @@ textarea:focus-visible {
   }
 }
 
+.case-toolbar {
+  padding-block-end: 1rem;
+  background: linear-gradient(to bottom, var(--bg-primary), var(--bg-primary) 45%, transparent);
+}
+
 .case-action {
   display: inline-flex;
   min-width: 2.25rem;
@@ -289,6 +294,17 @@ textarea:focus-visible {
   background-color: var(--bg-tertiary);
   border-color: var(--accent-dim);
   color: var(--accent-hover);
+}
+
+.case-outline-panel {
+  width: min(17rem, 100vw - 1.5rem);
+  max-height: min(18rem, 100dvh - 5rem);
+  transform-origin: top right;
+  animation: panel-appear var(--motion-fast) var(--motion-ease);
+}
+
+.case-summary :is(h1, h2, h3, h4) {
+  scroll-margin-top: 4.5rem;
 }
 
 .composer-field {

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import type { Chat, ChatMessage } from "../lib/types";
+import CaseOutline from "./CaseOutline";
 
 function downloadBrief(chat: Chat, summary: ChatMessage) {
   const title = chat.title.replace(/\s+/g, " ").replace(/[\\\[\]#*_<>]/g, "\\$&");
@@ -37,9 +38,10 @@ function downloadBrief(chat: Chat, summary: ChatMessage) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function CaseActions({ chat, summary, onStop }: {
+export default function CaseActions({ chat, summary, summaryRef, onStop }: {
   chat: Chat;
   summary?: ChatMessage;
+  summaryRef: RefObject<HTMLDivElement | null>;
   onStop?: () => void;
 }) {
   const [copyStatus, setCopyStatus] = useState("");
@@ -60,7 +62,7 @@ export default function CaseActions({ chat, summary, onStop }: {
   }
 
   return (
-    <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">
+    <div className="pointer-events-auto relative flex shrink-0 items-center gap-1.5">
       <span className="sr-only" role="status">{copyStatus}</span>
       <button
         aria-label="Copy CNR"
@@ -84,6 +86,7 @@ export default function CaseActions({ chat, summary, onStop }: {
           <span className="hidden sm:inline">Stop</span>
         </button>
       )}
+      {summary && <CaseOutline summaryRef={summaryRef} />}
       {summary && (
         <button
           aria-label="Download case brief"
