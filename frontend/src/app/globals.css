@@ -266,6 +266,31 @@ textarea:focus-visible {
   }
 }
 
+.case-action {
+  display: inline-flex;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding-inline: 0.6rem;
+  border: 1px solid var(--border-accent);
+  border-radius: 999px;
+  background: var(--bg-glass);
+  backdrop-filter: blur(12px);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--motion-fast), border-color var(--motion-fast), color var(--motion-fast);
+}
+
+.case-action:hover {
+  background-color: var(--bg-tertiary);
+  border-color: var(--accent-dim);
+  color: var(--accent-hover);
+}
+
 .composer-field {
   background: var(--bg-secondary);
   border: 1px solid var(--border);

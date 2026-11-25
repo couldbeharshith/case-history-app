@@ -9,6 +9,7 @@ import { readEvents, streamError, type CaseStreamEvent } from "../lib/case-strea
 import { announceChatUpdate, subscribeToChatUpdates } from "../lib/chat-updates";
 import type { Chat, ChatMessage } from "../lib/types";
 import { useSidebar } from "./SidebarProvider";
+import CaseActions from "./CaseActions";
 
 // ── Copy button ────────────────────────────────────────────────────────────
 function CopyButton({ text }: { text: string }) {
@@ -707,7 +708,8 @@ export default function ChatView({ chatId }: ChatViewProps) {
   }
 
   const conversationMessages = chat.messages.slice(1);
-  const summaryDone = !isStreaming && conversationMessages.length > 0;
+  const summary = chat.messages.find((message) => message.role === "assistant");
+  const summaryDone = !isStreaming && Boolean(summary);
   const busyStreaming = isStreaming || isFollowingUp;
 
   return (
@@ -739,10 +741,10 @@ export default function ChatView({ chatId }: ChatViewProps) {
 
       {/* Floating header pills */}
       <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
-        <div className="flex items-center justify-between px-3 md:px-5 pt-3 md:pt-4">
+        <div className="flex items-center justify-between gap-2 px-3 md:px-5 pt-3 md:pt-4">
           {/* Left pill: hamburger + title */}
           <div
-            className="pointer-events-auto flex items-center gap-2 pl-1 pr-3 md:pl-3 md:pr-4 py-1.5 md:py-2 rounded-full shadow-lg"
+            className="pointer-events-auto flex min-w-0 items-center gap-2 pl-1 pr-3 md:pl-3 md:pr-4 py-1.5 md:py-2 rounded-full shadow-lg"
             style={{
               background: "rgba(17, 17, 17, 0.85)",
               backdropFilter: "blur(12px)",
@@ -766,7 +768,8 @@ export default function ChatView({ chatId }: ChatViewProps) {
             {busyStreaming && (
               <div className="w-1.5 h-1.5 rounded-full animate-glow shrink-0" style={{ background: "var(--accent)" }} />
             )}
-            <h1 className="text-[13px] font-bold tracking-tight truncate max-w-[180px] md:max-w-none" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
+            <h1 className="min-w-0 truncate text-[13px] font-bold tracking-tight"
+              title={chat.title} style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
               {chat.title}
             </h1>
             {busyStreaming && (
@@ -779,27 +782,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
               </span>
             )}
           </div>
-          {/* Right pill: CNR badge */}
-          <div
-            className="pointer-events-auto px-2.5 md:px-3 py-1.5 md:py-2 rounded-full shadow-lg hidden sm:block"
-            style={{
-              background: "rgba(17, 17, 17, 0.85)",
-              backdropFilter: "blur(12px)",
-              WebkitBackdropFilter: "blur(12px)",
-              border: "1px solid var(--border-accent)",
-            }}
-          >
-            <span
-              className="text-[10px] md:text-xs font-medium"
-              style={{
-                color: "var(--accent)",
-                fontFamily: "var(--font-mono)",
-                letterSpacing: "0.03em",
-              }}
-            >
-              {chat.cnr_num}
-            </span>
-          </div>
+          <CaseActions chat={chat} summary={summaryDone ? summary : undefined} />
         </div>
       </div>
 
