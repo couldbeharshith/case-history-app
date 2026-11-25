@@ -1,7 +1,7 @@
 """CLI entry point — scrape a case by CNR and print the streamed summary."""
 
 from src.config import get_logger
-from src.llm import stream_summary
+from src.llm import stream_summary, upload_fir_file
 from src.scraper import scrape_case_data
 
 logger = get_logger(__name__)
@@ -16,7 +16,7 @@ def main() -> None:
     for chunk in stream_summary(
         overview_img_b64=data["overview_img_b64"],
         history=data["history"],
-        fir_file_url=data["fir_file_url"],
+        file_id=upload_fir_file(data["fir_file_url"]),
     ):
         print(chunk, end="", flush=True)
 
