@@ -37,7 +37,11 @@ function downloadBrief(chat: Chat, summary: ChatMessage) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export default function CaseActions({ chat, summary }: { chat: Chat; summary?: ChatMessage }) {
+export default function CaseActions({ chat, summary, onStop }: {
+  chat: Chat;
+  summary?: ChatMessage;
+  onStop?: () => void;
+}) {
   const [copyStatus, setCopyStatus] = useState("");
 
   useEffect(() => {
@@ -72,6 +76,14 @@ export default function CaseActions({ chat, summary }: { chat: Chat; summary?: C
         </svg>
         <span className="hidden font-mono lg:inline">{copyStatus || chat.cnr_num}</span>
       </button>
+      {onStop && (
+        <button type="button" aria-label="Stop lookup" title="Stop lookup" className="case-action" onClick={onStop}>
+          <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <rect x="6" y="6" width="12" height="12" rx="2" />
+          </svg>
+          <span className="hidden sm:inline">Stop</span>
+        </button>
+      )}
       {summary && (
         <button
           aria-label="Download case brief"

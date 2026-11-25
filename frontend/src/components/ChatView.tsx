@@ -106,7 +106,11 @@ function ProgressSteps({ steps, currentStep }: { steps: string[]; currentStep: s
   );
 }
 
-function CaseDialog({ titleId, children }: { titleId: string; children: ReactNode }) {
+function CaseDialog({ titleId, onStop, children }: {
+  titleId: string;
+  onStop: () => void;
+  children: ReactNode;
+}) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -123,6 +127,13 @@ function CaseDialog({ titleId, children }: { titleId: string; children: ReactNod
       onCancel={(event) => event.preventDefault()}
     >
       {children}
+      <button
+        type="button"
+        onClick={onStop}
+        className="mx-auto mt-3 block min-h-8 cursor-pointer rounded-md px-2 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+      >
+        Stop lookup
+      </button>
     </dialog>
   );
 }
@@ -132,11 +143,13 @@ function CaptchaModal({
   captchaImg,
   errorMsg,
   submitting,
+  onStop,
   onSubmit,
 }: {
   captchaImg: string;
   errorMsg?: string;
   submitting: boolean;
+  onStop: () => void;
   onSubmit: (text: string) => void;
 }) {
   const [value, setValue] = useState("");
@@ -146,7 +159,7 @@ function CaptchaModal({
   };
 
   return (
-    <CaseDialog titleId="captcha-title">
+    <CaseDialog titleId="captcha-title" onStop={onStop}>
       <h3 id="captcha-title" className="text-base font-bold mb-4" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
         Complete the CAPTCHA
       </h3>
@@ -198,10 +211,11 @@ function CaptchaModal({
 }
 
 // ── District / PS Modal ────────────────────────────────────────────────────
-function DistrictPsModal({ policeStation, errorMsg, submitting, onSubmit }: {
+function DistrictPsModal({ policeStation, errorMsg, submitting, onStop, onSubmit }: {
   policeStation?: string | null;
   errorMsg?: string;
   submitting: boolean;
+  onStop: () => void;
   onSubmit: (district: string, ps: string) => void;
 }) {
   const [allPs, setAllPs] = useState<Record<string, string[]> | null>(null);
@@ -236,7 +250,7 @@ function DistrictPsModal({ policeStation, errorMsg, submitting, onSubmit }: {
   };
 
   return (
-    <CaseDialog titleId="station-title">
+    <CaseDialog titleId="station-title" onStop={onStop}>
       <h3 id="station-title" className="text-base font-bold mb-1" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
         Select a police station
       </h3>
@@ -398,6 +412,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasStarted, setHasStarted] = useState(false);
+  const [lookupStopped, setLookupStopped] = useState(false);
 
   // Follow-up state
   const [inputValue, setInputValue] = useState("");
@@ -534,12 +549,14 @@ export default function ChatView({ chatId }: ChatViewProps) {
   );
 
   // ── Initial summary stream (SSE) ─────────────────────────────────────
-  const startStream = useCallback(async () => {
-    if (hasStarted || isStreaming) return;
+  const startStream = useCallback(async (retry = false) => {
+    if (activeRequest.current || (hasStarted && !retry)) return;
     const request = new AbortController();
     activeRequest.current = request;
+    followLatest.current = true;
     setHasStarted(true);
     setIsStreaming(true);
+    setLookupStopped(false);
     setError(null);
     setStreamText("");
     setLogSteps([]);
@@ -590,7 +607,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
       setShowDistrictPsModal(false);
       setIsStreaming(false);
     }
-  }, [chatId, hasStarted, isStreaming, handleSSEvent]);
+  }, [chatId, hasStarted, handleSSEvent]);
 
   // ── Follow-up message stream (SSE) ────────────────────────────────────
   const sendFollowUp = useCallback(async () => {
@@ -665,6 +682,14 @@ export default function ChatView({ chatId }: ChatViewProps) {
     }
   }, [chatId, inputValue, isFollowingUp, isStreaming]);
 
+  function stopLookup() {
+    activeRequest.current?.abort();
+    setStreamText("");
+    setLogSteps([]);
+    setCurrentStep(null);
+    setLookupStopped(true);
+  }
+
   async function sendManualInput(values: Record<string, string>, onAccepted: () => void) {
     const request = activeRequest.current;
     if (!request || submittingManualInput) return;
@@ -717,6 +742,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
       {/* Modals */}
       {captchaModal && (
         <CaptchaModal
+          onStop={stopLookup}
           key={captchaModal.img}
           captchaImg={captchaModal.img}
           errorMsg={manualError || captchaModal.error}
@@ -729,6 +755,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
       )}
       {showDistrictPsModal && (
         <DistrictPsModal
+          onStop={stopLookup}
           policeStation={districtPsHint}
           errorMsg={manualError}
           submitting={submittingManualInput}
@@ -782,7 +809,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
               </span>
             )}
           </div>
-          <CaseActions chat={chat} summary={summaryDone ? summary : undefined} />
+          <CaseActions chat={chat} summary={summaryDone ? summary : undefined} onStop={isStreaming ? stopLookup : undefined} />
         </div>
       </div>
 
@@ -868,28 +895,27 @@ export default function ChatView({ chatId }: ChatViewProps) {
             </div>
           )}
 
-          {/* Error state */}
-          {error && (
+          {(error || lookupStopped) && (
             <div
-              className="ui-appear mt-6 md:mt-8 rounded-xl overflow-hidden"
-              role="alert"
-              style={{ background: "rgba(239, 68, 68, 0.06)", border: "1px solid rgba(239, 68, 68, 0.12)" }}
+              className={`ui-appear mt-6 rounded-xl border p-4 md:mt-8 md:p-5 ${
+                lookupStopped
+                  ? "border-[var(--border-accent)] bg-[var(--accent-glow)]"
+                  : "border-red-500/20 bg-red-500/[0.06]"
+              }`}
             >
-              <div className="px-4 md:px-5 py-3 md:py-4 flex items-start gap-3">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="8" x2="12" y2="12" />
-                  <line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-                <div>
-                  <p className="text-sm font-semibold mb-0.5" style={{ color: "var(--danger)", fontFamily: "var(--font-display)" }}>
-                    Request failed
-                  </p>
-                  <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
-                    {error}
-                  </p>
-                </div>
+              <div role={lookupStopped ? "status" : "alert"}>
+                <p className="text-sm font-semibold [font-family:var(--font-display)]">
+                  {lookupStopped ? "Lookup stopped" : "Request failed"}
+                </p>
+                <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">
+                  {lookupStopped ? "Start again when you’re ready." : error}
+                </p>
               </div>
+              {!summary && !isStreaming && (
+                <button className="case-action mt-3" type="button" onClick={() => void startStream(true)}>
+                  Retry lookup
+                </button>
+              )}
             </div>
           )}
         </div>
