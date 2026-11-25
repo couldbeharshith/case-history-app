@@ -7,6 +7,7 @@ import requests
 
 from src.config import (
     CAPTCHA_PROMPT_FILE,
+    OPENAI_MODEL,
     OPTIONS_PROMPT_FILE,
     SUMMARY_PROMPT_FILE,
     get_logger,
@@ -17,14 +18,13 @@ from src.models import CaptchaText, OptionSelect
 
 logger = get_logger(__name__)
 
-SUMMARY_MODEL = "gpt-5-nano"
 MAX_FIR_BYTES = 512 * 1024 * 1024
 
 
 def solve_captcha(b64_image: str) -> str:
     """Send a base-64 captcha image to the LLM and return the decoded text"""
     response = get_openai_client().responses.parse(
-        model="gpt-5-nano",
+        model=OPENAI_MODEL,
         input=[
             {"role": "system", "content": load_prompt(CAPTCHA_PROMPT_FILE)},
             {
@@ -42,7 +42,7 @@ def solve_captcha(b64_image: str) -> str:
                 ],
             },
         ],
-        reasoning={"effort": "minimal"},
+        reasoning={"effort": "low"},
         text_format=CaptchaText,
     )
     text = response.output_parsed.text
@@ -53,7 +53,7 @@ def solve_captcha(b64_image: str) -> str:
 def ask_llm_options(options: str, ps: str, prompt: str) -> str | None:
     """Ask the LLM to pick one option from a comma-separated list. Used for dropdown menu of FIR page"""
     response = get_openai_client().responses.parse(
-        model="gpt-5-nano",
+        model=OPENAI_MODEL,
         input=[
             {"role": "system", "content": load_prompt(OPTIONS_PROMPT_FILE)},
             {
@@ -122,7 +122,7 @@ def upload_fir_file(fir_url: str | None) -> str | None:
 
 def _stream_text(messages: list[dict]) -> Generator[str]:
     with get_openai_client().responses.create(
-        model=SUMMARY_MODEL,
+        model=OPENAI_MODEL,
         input=messages,
         reasoning={"effort": "low"},
         stream=True,
