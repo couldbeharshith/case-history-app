@@ -5,35 +5,9 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Chat } from "../lib/types";
+import { readEvents, streamError, type CaseStreamEvent } from "../lib/case-stream";
+import type { Chat, ChatMessage } from "../lib/types";
 import { useSidebar } from "./SidebarProvider";
-
-// ── SSE event types (mirrors backend SSEventType) ──────────────────────────
-interface SSEvent {
-  type: "text_chunk" | "summary_log" | "manual_input_request";
-  content: string | null;
-  metadata: Record<string, string> | null;
-}
-
-// ── SSE parser helper ──────────────────────────────────────────────────────
-function parseSSEChunk(
-  buffer: string,
-  onEvent: (evt: SSEvent) => void
-): string {
-  let idx: number;
-  while ((idx = buffer.indexOf("\n\n")) !== -1) {
-    const line = buffer.slice(0, idx);
-    buffer = buffer.slice(idx + 2);
-    if (line.startsWith("data: ")) {
-      try {
-        onEvent(JSON.parse(line.slice(6)));
-      } catch {
-        /* ignore malformed */
-      }
-    }
-  }
-  return buffer;
-}
 
 // ── Copy button ────────────────────────────────────────────────────────────
 function CopyButton({ text }: { text: string }) {
@@ -155,19 +129,18 @@ function CaseDialog({ titleId, children }: { titleId: string; children: ReactNod
 function CaptchaModal({
   captchaImg,
   errorMsg,
+  submitting,
   onSubmit,
 }: {
   captchaImg: string;
   errorMsg?: string;
+  submitting: boolean;
   onSubmit: (text: string) => void;
 }) {
   const [value, setValue] = useState("");
   const handleSubmit = () => {
     const trimmed = value.trim();
-    if (trimmed.length === 6) {
-      onSubmit(trimmed);
-      setValue("");
-    }
+    if (!submitting && trimmed.length === 6) onSubmit(trimmed);
   };
 
   return (
@@ -177,7 +150,7 @@ function CaptchaModal({
       </h3>
 
       {errorMsg && (
-        <p className="text-xs mb-3 px-3 py-2 rounded-lg" style={{ color: "var(--danger)", background: "rgba(239,68,68,0.08)" }}>
+        <p role="alert" className="text-xs mb-3 px-3 py-2 rounded-lg" style={{ color: "var(--danger)", background: "rgba(239,68,68,0.08)" }}>
           {errorMsg}
         </p>
       )}
@@ -189,6 +162,7 @@ function CaptchaModal({
       <input
         type="text"
         maxLength={6}
+        disabled={submitting}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
@@ -206,7 +180,7 @@ function CaptchaModal({
 
       <button
         onClick={handleSubmit}
-        disabled={value.trim().length !== 6}
+        disabled={submitting || value.trim().length !== 6}
         className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
         style={{
           background: value.trim().length === 6 ? "var(--accent)" : "var(--bg-elevated)",
@@ -215,34 +189,48 @@ function CaptchaModal({
           fontFamily: "var(--font-display)",
         }}
       >
-        Submit
+        {submitting ? "Submitting…" : "Submit"}
       </button>
     </CaseDialog>
   );
 }
 
 // ── District / PS Modal ────────────────────────────────────────────────────
-function DistrictPsModal({ policeStation, onSubmit }: { policeStation?: string | null; onSubmit: (district: string, ps: string) => void }) {
+function DistrictPsModal({ policeStation, errorMsg, submitting, onSubmit }: {
+  policeStation?: string | null;
+  errorMsg?: string;
+  submitting: boolean;
+  onSubmit: (district: string, ps: string) => void;
+}) {
   const [allPs, setAllPs] = useState<Record<string, string[]> | null>(null);
   const [district, setDistrict] = useState("");
   const [ps, setPs] = useState("");
   const [loading, setLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState(false);
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
 
   useEffect(() => {
-    fetch("/api/chats/all-ps")
-      .then((r) => r.json())
-      .then((data) => {
-        setAllPs(data);
-        setLoading(false);
+    const request = new AbortController();
+    fetch("/api/chats/all-ps", { signal: request.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error();
+        return response.json();
       })
-      .catch(() => setLoading(false));
-  }, []);
+      .then((data: Record<string, string[]>) => setAllPs(data))
+      .catch(() => {
+        if (!request.signal.aborted) setCatalogError(true);
+      })
+      .finally(() => {
+        if (!request.signal.aborted) setLoading(false);
+      });
+    return () => request.abort();
+  }, [catalogAttempt]);
 
   const districts = allPs ? Object.keys(allPs).sort() : [];
-  const stations = allPs && district ? allPs[district]?.sort() ?? [] : [];
+  const stations = allPs && district ? allPs[district]?.toSorted() ?? [] : [];
 
   const handleSubmit = () => {
-    if (district && ps) onSubmit(district, ps);
+    if (!submitting && district && ps) onSubmit(district, ps);
   };
 
   return (
@@ -261,13 +249,34 @@ function DistrictPsModal({ policeStation, onSubmit }: { policeStation?: string |
         </div>
       )}
 
+      {errorMsg && (
+        <p role="alert" className="mb-3 rounded-lg px-3 py-2 text-xs text-[#fca5a5]">
+          {errorMsg}
+        </p>
+      )}
       {loading ? (
-        <div className="flex items-center justify-center py-8"><Spinner size={20} /></div>
+        <div className="flex items-center justify-center py-8" role="status" aria-label="Loading police stations"><Spinner size={20} /></div>
+      ) : catalogError ? (
+        <div className="space-y-3">
+          <p role="alert" className="text-sm text-[#fca5a5]">Couldn’t load the police stations.</p>
+          <button
+            type="button"
+            className="rounded-lg bg-[var(--accent-glow)] px-3 py-2 text-sm font-semibold text-[var(--accent)]"
+            onClick={() => {
+              setCatalogError(false);
+              setLoading(true);
+              setCatalogAttempt((attempt) => attempt + 1);
+            }}
+          >
+            Reload police stations
+          </button>
+        </div>
       ) : (
         <>
           <label htmlFor="case-district" className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--text-secondary)" }}>District</label>
           <select
             id="case-district"
+            disabled={submitting}
             value={district}
             onChange={(e) => { setDistrict(e.target.value); setPs(""); }}
             className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-4"
@@ -287,7 +296,7 @@ function DistrictPsModal({ policeStation, onSubmit }: { policeStation?: string |
             id="case-station"
             value={ps}
             onChange={(e) => setPs(e.target.value)}
-            disabled={!district}
+            disabled={submitting || !district}
             className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-5"
             style={{
               background: "var(--bg-tertiary)",
@@ -302,7 +311,7 @@ function DistrictPsModal({ policeStation, onSubmit }: { policeStation?: string |
 
           <button
             onClick={handleSubmit}
-            disabled={!district || !ps}
+            disabled={submitting || !district || !ps}
             className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
             style={{
               background: district && ps ? "var(--accent)" : "var(--bg-elevated)",
@@ -311,7 +320,7 @@ function DistrictPsModal({ policeStation, onSubmit }: { policeStation?: string |
               fontFamily: "var(--font-display)",
             }}
           >
-            Continue
+            {submitting ? "Submitting…" : "Continue"}
           </button>
         </>
       )}
@@ -401,6 +410,11 @@ export default function ChatView({ chatId }: ChatViewProps) {
   const [captchaModal, setCaptchaModal] = useState<{ img: string; error?: string } | null>(null);
   const [showDistrictPsModal, setShowDistrictPsModal] = useState(false);
   const [districtPsHint, setDistrictPsHint] = useState<string | null>(null);
+  const [manualError, setManualError] = useState<string>();
+  const [submittingManualInput, setSubmittingManualInput] = useState(false);
+
+  const activeRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => activeRequest.current?.abort(), []);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -473,14 +487,10 @@ export default function ChatView({ chatId }: ChatViewProps) {
 
   // ── Handle a single SSE event (summary flow) ──────────────────────────
   const handleSSEvent = useCallback(
-    (evt: SSEvent) => {
+    (evt: CaseStreamEvent) => {
       switch (evt.type) {
         case "summary_log": {
           const msg = evt.content ?? "";
-          if (msg.startsWith("Error:")) {
-            setError(msg);
-            return;
-          }
           setCurrentStep(msg);
           setLogSteps((prev) => {
             // Replace duplicate current step or append
@@ -492,6 +502,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
         case "manual_input_request": {
           const meta = evt.metadata;
           if (!meta) break;
+          setManualError(undefined);
           if (meta.type === "solve_captcha") {
             setCaptchaModal({ img: meta.captcha_img, error: meta.error });
           } else if (meta.type === "district_ps") {
@@ -501,7 +512,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
           break;
         }
         case "text_chunk": {
-          // First text chunk means "Generating case summary" step is done
+          setShowDistrictPsModal(false);
           setCurrentStep((prev) => (prev === null ? prev : null));
           setStreamText((prev) => prev + (evt.content ?? ""));
           break;
@@ -514,6 +525,8 @@ export default function ChatView({ chatId }: ChatViewProps) {
   // ── Initial summary stream (SSE) ─────────────────────────────────────
   const startStream = useCallback(async () => {
     if (hasStarted || isStreaming) return;
+    const request = new AbortController();
+    activeRequest.current = request;
     setHasStarted(true);
     setIsStreaming(true);
     setError(null);
@@ -522,7 +535,9 @@ export default function ChatView({ chatId }: ChatViewProps) {
     setCurrentStep((prev) => (prev === null ? prev : null));
 
     try {
-      const res = await fetch(`/api/chats/${chatId}/stream`, { method: "POST" });
+      const res = await fetch(`/api/chats/${chatId}/stream`, {
+        method: "POST", signal: request.signal,
+      });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ error: "Unknown error" }));
         throw new Error(errData.error || `Backend error: ${res.status}`);
@@ -537,18 +552,30 @@ export default function ChatView({ chatId }: ChatViewProps) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        buffer = parseSSEChunk(buffer, handleSSEvent);
+        buffer = readEvents(buffer, (event) => {
+          const message = streamError(event);
+          if (message) throw new Error(message);
+          handleSSEvent(event);
+        });
       }
 
       // Re-fetch saved chat
-      const updatedChat = await fetch(`/api/chats/${chatId}`).then((r) => r.json());
+      const response = await fetch(`/api/chats/${chatId}`, { signal: request.signal });
+      if (!response.ok) throw new Error("Couldn’t reload the saved case.");
+      const updatedChat: Chat = await response.json();
       setChat(updatedChat);
       setStreamText("");
       setLogSteps([]);
       setCurrentStep((prev) => (prev === null ? prev : null));
     } catch (err) {
+      if (request.signal.aborted) return;
       setError(err instanceof Error ? err.message : "Something went wrong");
+      setStreamText("");
     } finally {
+      request.abort();
+      if (activeRequest.current === request) activeRequest.current = null;
+      setCaptchaModal(null);
+      setShowDistrictPsModal(false);
       setIsStreaming(false);
     }
   }, [chatId, hasStarted, isStreaming, handleSSEvent]);
@@ -558,14 +585,19 @@ export default function ChatView({ chatId }: ChatViewProps) {
     const question = inputValue.trim();
     if (!question || isFollowingUp || isStreaming) return;
 
+    const request = new AbortController();
+    activeRequest.current = request;
     followLatest.current = true;
     setInputValue("");
     if (inputRef.current) inputRef.current.style.height = "auto";
     setIsFollowingUp(true);
     setFollowUpStreamText("");
 
-    setChat((prev) =>
-      prev ? { ...prev, messages: [...prev.messages, { role: "user", content: question, timestamp: Date.now() }] } : prev
+    setError(null);
+    const pendingMessage: ChatMessage = { role: "user", content: question, timestamp: Date.now() };
+    setChat((previous) => previous
+      ? { ...previous, messages: [...previous.messages, pendingMessage] }
+      : previous
     );
 
     try {
@@ -573,6 +605,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question }),
+        signal: request.signal,
       });
 
       if (!res.ok) {
@@ -589,53 +622,61 @@ export default function ChatView({ chatId }: ChatViewProps) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        buffer = parseSSEChunk(buffer, (evt) => {
+        buffer = readEvents(buffer, (evt) => {
+          const message = streamError(evt);
+          if (message) throw new Error(message);
           if (evt.type === "text_chunk") {
             setFollowUpStreamText((prev) => prev + (evt.content ?? ""));
           }
         });
       }
 
-      const updatedChat = await fetch(`/api/chats/${chatId}`).then((r) => r.json());
+      const response = await fetch(`/api/chats/${chatId}`, { signal: request.signal });
+      if (!response.ok) throw new Error("Couldn’t reload the saved case.");
+      const updatedChat: Chat = await response.json();
       setChat(updatedChat);
       setFollowUpStreamText("");
     } catch (err) {
+      if (request.signal.aborted) return;
       setError(err instanceof Error ? err.message : "Something went wrong");
+      setInputValue(question);
+      setFollowUpStreamText("");
+      setChat((previous) => previous
+        ? { ...previous, messages: previous.messages.filter((message) => message !== pendingMessage) }
+        : previous
+      );
     } finally {
+      request.abort();
+      if (activeRequest.current === request) activeRequest.current = null;
       setIsFollowingUp(false);
     }
   }, [chatId, inputValue, isFollowingUp, isStreaming]);
 
-  // ── Manual input handlers ─────────────────────────────────────────────
-  const submitCaptcha = useCallback(async (text: string) => {
-    setCaptchaModal(null);
-    try {
-      await fetch(`/api/chats/${chatId}/input`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ captcha_text: text }),
-      });
-    } catch {
-      setError("Failed to submit captcha");
-    }
-  }, [chatId]);
+  async function sendManualInput(values: Record<string, string>, onAccepted: () => void) {
+    const request = activeRequest.current;
+    if (!request || submittingManualInput) return;
+    setSubmittingManualInput(true);
+    setManualError(undefined);
 
-  const submitDistrictPs = useCallback(async (district: string, ps: string) => {
-    setShowDistrictPsModal(false);
     try {
-      await fetch(`/api/chats/${chatId}/input`, {
+      const response = await fetch(`/api/chats/${chatId}/input`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ district, ps }),
+        body: JSON.stringify(values),
+        signal: request.signal,
       });
+      if (!response.ok) throw new Error();
+      onAccepted();
     } catch {
-      setError("Failed to submit selection");
+      if (!request.signal.aborted) setManualError("Couldn’t submit your input. Try again.");
+    } finally {
+      setSubmittingManualInput(false);
     }
-  }, [chatId]);
+  }
 
   // Auto-start stream
   useEffect(() => {
-    if (chat && chat.messages.length === 0 && !hasStarted) {
+    if (chat && !chat.messages.some((message) => message.role === "assistant") && !hasStarted) {
       startStream();
     }
   }, [chat, hasStarted, startStream]);
@@ -660,8 +701,29 @@ export default function ChatView({ chatId }: ChatViewProps) {
   return (
     <div className="flex h-full flex-col relative">
       {/* Modals */}
-      {captchaModal && <CaptchaModal captchaImg={captchaModal.img} errorMsg={captchaModal.error} onSubmit={submitCaptcha} />}
-      {showDistrictPsModal && <DistrictPsModal policeStation={districtPsHint} onSubmit={submitDistrictPs} />}
+      {captchaModal && (
+        <CaptchaModal
+          key={captchaModal.img}
+          captchaImg={captchaModal.img}
+          errorMsg={manualError || captchaModal.error}
+          submitting={submittingManualInput}
+          onSubmit={(captchaText) => void sendManualInput(
+            { captcha_text: captchaText },
+            () => setCaptchaModal((current) => current === captchaModal ? null : current),
+          )}
+        />
+      )}
+      {showDistrictPsModal && (
+        <DistrictPsModal
+          policeStation={districtPsHint}
+          errorMsg={manualError}
+          submitting={submittingManualInput}
+          onSubmit={(district, ps) => void sendManualInput(
+            { district, ps },
+            () => setShowDistrictPsModal(false),
+          )}
+        />
+      )}
 
       {/* Floating header pills */}
       <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
