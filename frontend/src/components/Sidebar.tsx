@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, type CSSProperties } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ChatListItem } from "../lib/types";
@@ -11,50 +11,51 @@ const MAX_WIDTH = 420;
 const DEFAULT_WIDTH = 272;
 const COLLAPSED_WIDTH = 56;
 
+function formatDate(timestamp: number) {
+  const date = new Date(timestamp);
+  const daysAgo = Math.floor((Date.now() - timestamp) / (1000 * 60 * 60 * 24));
+
+  if (daysAgo === 0) return "Today";
+  if (daysAgo === 1) return "Yesterday";
+  if (daysAgo < 7) return `${daysAgo}d ago`;
+  return date.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
 export default function Sidebar() {
   const [chats, setChats] = useState<ChatListItem[]>([]);
   const [collapsed, setCollapsed] = useState(false);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
-  const sidebarRef = useRef<HTMLElement>(null);
-  const widthBeforeCollapse = useRef(DEFAULT_WIDTH);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
   const { open: mobileOpen, close: closeMobile } = useSidebar();
 
-  // Mobile detection
-  const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 768);
-    check();
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
-  }, []);
-
-  useEffect(() => {
-    fetch("/api/chats")
-      .then((r) => r.json())
+    const request = new AbortController();
+    fetch("/api/chats", { signal: request.signal })
+      .then((response) => response.json())
       .then(setChats)
       .catch(() => {});
+    return () => request.abort();
   }, [pathname]);
-
-  // ── Drag-to-resize logic ──────────────────────────────────────────────
-  const startResizing = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizing(true);
-  }, []);
 
   useEffect(() => {
     if (!isResizing) return;
-    const handleMouseMove = (e: MouseEvent) => {
-      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, e.clientX));
-      setWidth(newWidth);
-    };
-    const handleMouseUp = () => setIsResizing(false);
+
+    function handleMouseMove(event: MouseEvent) {
+      setWidth(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, event.clientX)));
+    }
+    function handleMouseUp() {
+      setIsResizing(false);
+    }
+
     document.addEventListener("mousemove", handleMouseMove);
     document.addEventListener("mouseup", handleMouseUp);
-    // Prevent text selection while dragging
     document.body.style.userSelect = "none";
     document.body.style.cursor = "col-resize";
+
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
@@ -63,368 +64,227 @@ export default function Sidebar() {
     };
   }, [isResizing]);
 
-  // ── Collapse / expand ─────────────────────────────────────────────────
-  const toggleCollapse = () => {
-    if (collapsed) {
-      setCollapsed(false);
-      setWidth(widthBeforeCollapse.current);
-    } else {
-      widthBeforeCollapse.current = width;
-      setCollapsed(true);
-    }
-  };
+  useEffect(() => {
+    if (!mobileOpen || !window.matchMedia("(max-width: 767px)").matches) return;
+    const opener = document.activeElement;
+    closeButtonRef.current?.focus();
 
-  const activeChatId = pathname.startsWith("/chat/")
-    ? pathname.split("/")[2]
-    : null;
+    return () => {
+      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
+    };
+  }, [mobileOpen]);
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    await fetch(`/api/chats/${id}`, { method: "DELETE" });
-    setChats((prev) => prev.filter((c) => c.id !== id));
-  };
-
-  const handleRename = async (e: React.MouseEvent, id: string, currentTitle: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const newTitle = prompt("Rename case:", currentTitle);
-    if (!newTitle || newTitle.trim() === currentTitle) return;
-    try {
-      const res = await fetch(`/api/chats/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: newTitle.trim() }),
-      });
-      if (res.ok) {
-        setChats((prev) =>
-          prev.map((c) => (c.id === id ? { ...c, title: newTitle.trim() } : c))
-        );
-      }
-    } catch { /* ignore */ }
-  };
-
-  // 3-dot menu state
-  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  // Close menu on outside click
   useEffect(() => {
     if (!menuOpenId) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+
+    function handleOutsidePress(event: PointerEvent) {
+      if (event.target instanceof Node && !menuRef.current?.contains(event.target)) {
         setMenuOpenId(null);
       }
-    };
-    document.addEventListener("mousedown", handler);
-    document.addEventListener("touchstart", handler as EventListener);
-    return () => {
-      document.removeEventListener("mousedown", handler);
-      document.removeEventListener("touchstart", handler as EventListener);
-    };
+    }
+
+    document.addEventListener("pointerdown", handleOutsidePress);
+    return () => document.removeEventListener("pointerdown", handleOutsidePress);
   }, [menuOpenId]);
 
-  const formatDate = (ts: number) => {
-    const d = new Date(ts);
-    const now = new Date();
-    const diffDays = Math.floor(
-      (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24)
-    );
-    if (diffDays === 0) return "Today";
-    if (diffDays === 1) return "Yesterday";
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-  };
+  function toggleCollapse() {
+    setMenuOpenId(null);
+    setCollapsed((wasCollapsed) => !wasCollapsed);
+  }
 
-  const currentWidth = collapsed ? COLLAPSED_WIDTH : width;
+  async function handleDelete(id: string) {
+    await fetch(`/api/chats/${id}`, { method: "DELETE" });
+    setChats((previous) => previous.filter((chat) => chat.id !== id));
+  }
+
+  async function handleRename(id: string, currentTitle: string) {
+    const title = prompt("Rename case:", currentTitle)?.trim();
+    if (!title || title === currentTitle) return;
+
+    try {
+      const response = await fetch(`/api/chats/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      if (response.ok) {
+        setChats((previous) => previous.map((chat) => (chat.id === id ? { ...chat, title } : chat)));
+      }
+    } catch { /* Keep the current title. */ }
+  }
+
+  function closeMenu() {
+    menuRef.current?.querySelector("button")?.focus();
+    setMenuOpenId(null);
+  }
+
+  function closeSidebar() {
+    setMenuOpenId(null);
+    closeMobile();
+  }
 
   return (
     <>
-      {/* Mobile backdrop — always mounted, visibility via opacity */}
       <div
-        className={`fixed inset-0 z-40 md:hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-          mobileOpen
-            ? "opacity-100 pointer-events-auto"
-            : "opacity-0 pointer-events-none"
+        aria-hidden="true"
+        className={`fixed inset-0 z-40 bg-black/60 backdrop-blur-[4px] transition-opacity duration-300 md:hidden ${
+          mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
-        style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}
-        onClick={closeMobile}
+        onClick={closeSidebar}
       />
 
       <aside
-        ref={sidebarRef}
-        className={`
-          relative h-screen flex flex-col shrink-0
-          max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50
-          max-md:transition-transform max-md:duration-300 max-md:ease-[cubic-bezier(0.16,1,0.3,1)]
-          ${mobileOpen ? "max-md:translate-x-0" : "max-md:-translate-x-full"}
-        `}
-        style={{
-          width: isMobile ? 280 : currentWidth,
-          transition: isResizing ? "none" : "width 0.3s cubic-bezier(0.16,1,0.3,1)",
-          background: "var(--bg-secondary)",
-          borderRight: "1px solid var(--border)",
+        id="case-sidebar"
+        aria-label="Case history"
+        className="case-sidebar relative flex h-full shrink-0 flex-col border-r border-[var(--border)] bg-[var(--bg-secondary)] max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50"
+        data-open={mobileOpen}
+        data-collapsed={collapsed}
+        data-resizing={isResizing}
+        style={{ "--sidebar-width": `${collapsed ? COLLAPSED_WIDTH : width}px` } as CSSProperties}
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          if (menuOpenId) closeMenu();
+          else if (mobileOpen) closeSidebar();
         }}
       >
-      {/* Header */}
-      <div
-        className="flex items-center justify-between px-3 h-[56px] shrink-0"
-        style={{ borderBottom: "1px solid var(--border)" }}
-      >
-        {!collapsed && (
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <div
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-extrabold transition-transform group-hover:scale-105"
-              style={{
-                background: "var(--accent)",
-                color: "var(--bg-primary)",
-                fontFamily: "var(--font-display)",
-              }}
-            >
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
+          <Link href="/" className="sidebar-expanded flex min-w-0 flex-1 items-center gap-2.5" onClick={closeSidebar}>
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--accent)] text-xs font-extrabold text-[var(--bg-primary)] [font-family:var(--font-display)]">
               CF
-            </div>
-            <span
-              className="text-sm font-bold tracking-tight"
-              style={{
-                fontFamily: "var(--font-display)",
-                color: "var(--text-primary)",
-              }}
-            >
+            </span>
+            <span className="truncate text-sm font-bold tracking-tight [font-family:var(--font-display)]">
               CaseFlow
             </span>
           </Link>
-        )}
-        <div className="flex items-center gap-1">
-          {/* Close button — mobile only */}
+
           <button
-            onClick={closeMobile}
-            className="p-2 rounded-lg transition-colors hover:bg-[var(--bg-tertiary)] cursor-pointer md:hidden"
-            style={{ color: "var(--text-muted)" }}
-            title="Close"
+            ref={closeButtonRef}
+            type="button"
+            onClick={closeSidebar}
+            className="grid h-9 w-9 shrink-0 cursor-pointer place-items-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] md:hidden"
+            aria-label="Close case history"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="m6 6 12 12M18 6 6 18" />
             </svg>
           </button>
-          {/* Collapse button — desktop only */}
+
           <button
+            type="button"
             onClick={toggleCollapse}
-            className="p-2 rounded-lg transition-colors hover:bg-[var(--bg-tertiary)] cursor-pointer hidden md:flex"
-            style={{ color: "var(--text-muted)" }}
-            title={collapsed ? "Expand" : "Collapse"}
+            className="hidden h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] md:grid"
+            aria-label={collapsed ? "Expand case history" : "Collapse case history"}
+            aria-expanded={!collapsed}
+            aria-controls="sidebar-history"
           >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{
-              transition: "transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
-              transform: collapsed ? "rotate(180deg)" : "rotate(0deg)",
-            }}
-          >
-            <polyline points="11 17 6 12 11 7" />
-            <polyline points="18 17 13 12 18 7" />
-          </svg>
-        </button>
-        </div>
-      </div>
-
-      {/* New Lookup button */}
-      {!collapsed && (
-        <div className="px-3 pt-3 pb-1">
-          <Link
-            href="/"
-            className="flex items-center gap-2.5 w-full px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all hover:brightness-110"
-            style={{
-              background: "var(--accent-glow)",
-              color: "var(--accent)",
-              border: "1px solid var(--border-accent)",
-              fontFamily: "var(--font-display)",
-              letterSpacing: "0.01em",
-            }}
-          >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
+            <svg aria-hidden="true" data-collapse-icon width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m11 17-5-5 5-5m7 10-5-5 5-5" />
             </svg>
-            New Lookup
-          </Link>
-        </div>
-      )}
+          </button>
+        </header>
 
-      {/* Chat list */}
-      {!collapsed && (
-        <div className="flex-1 overflow-y-auto px-2 py-2">
-          {chats.length === 0 ? (
-            <div className="flex flex-col items-center py-10 px-4">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
-                style={{ background: "var(--bg-tertiary)" }}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z" />
-                  <polyline points="14 2 14 8 20 8" />
-                </svg>
-              </div>
-              <p
-                className="text-xs text-center leading-relaxed"
-                style={{ color: "var(--text-muted)" }}
-              >
-                No cases yet.
-                <br />
-                Start your first lookup.
+        <nav id="sidebar-history" aria-label="Lookups" className="sidebar-expanded flex min-h-0 flex-1 flex-col">
+          <div className="px-3 pt-3">
+            <Link
+              href="/"
+              onClick={closeSidebar}
+              className="flex items-center gap-2.5 rounded-xl border border-[var(--border-accent)] bg-[var(--accent-glow)] px-3 py-2.5 text-[13px] font-semibold text-[var(--accent)] transition-colors hover:border-[var(--accent-dim)] hover:text-[var(--accent-hover)] [font-family:var(--font-display)]"
+            >
+              <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              New lookup
+            </Link>
+          </div>
+
+          <h2 className="px-4 pt-6 pb-2 text-xs font-semibold text-[var(--text-secondary)]">Recent cases</h2>
+          <div className="flex-1 overflow-y-auto px-2 py-1">
+            {chats.length === 0 ? (
+              <p className="px-2 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
+                Your lookups will appear here.
               </p>
-            </div>
-          ) : (
-            <div className="space-y-0.5">
-              {chats.map((chat, i) => (
-                <Link
-                  key={chat.id}
-                  href={`/chat/${chat.id}`}
-                  className="animate-slide-in group flex items-center justify-between px-3 py-2.5 rounded-xl transition-all duration-150"
-                  style={{
-                    animationDelay: `${i * 0.04}s`,
-                    background:
-                      activeChatId === chat.id
-                        ? "var(--bg-tertiary)"
-                        : "transparent",
-                    color:
-                      activeChatId === chat.id
-                        ? "var(--text-primary)"
-                        : "var(--text-secondary)",
-                    borderLeft:
-                      activeChatId === chat.id
-                        ? "2px solid var(--accent)"
-                        : "2px solid transparent",
-                    position: "relative",
-                    zIndex: menuOpenId === chat.id ? 50 : "auto",
-                  }}
-                >
-                  <div className="flex-1 min-w-0">
-                    <p
-                      className="truncate text-[13px]"
-                      style={{
-                        fontWeight: activeChatId === chat.id ? 600 : 400,
-                        fontFamily: "var(--font-body)",
-                      }}
+            ) : (
+              <ul className="space-y-0.5">
+                {chats.map((chat) => {
+                  const active = pathname === `/chat/${chat.id}`;
+                  const menuOpen = menuOpenId === chat.id;
+                  const menuId = `case-actions-${chat.id}`;
+
+                  return (
+                    <li
+                      key={chat.id}
+                      data-active={active}
+                      className={`case-history-row group relative rounded-lg border-l-2 border-transparent ${
+                        menuOpen ? "z-10" : ""
+                      }`}
                     >
-                      {chat.title}
-                    </p>
-                    <p
-                      className="text-[10px] mt-0.5 font-medium"
-                      style={{
-                        color: "var(--text-muted)",
-                        fontFamily: "var(--font-mono)",
-                        fontSize: "10px",
-                      }}
-                    >
-                      {formatDate(chat.updated_at)}
-                    </p>
-                  </div>
-                  <div className="relative" ref={menuOpenId === chat.id ? menuRef : undefined}>
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setMenuOpenId(menuOpenId === chat.id ? null : chat.id);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg transition-all hover:bg-[var(--bg-elevated)] cursor-pointer"
-                      style={{ color: "var(--text-muted)" }}
-                      title="Options"
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" />
-                      </svg>
-                    </button>
-                    {menuOpenId === chat.id && (
-                      <div
-                        className="absolute right-0 top-full mt-1 z-50 min-w-[130px] rounded-xl py-1 shadow-xl animate-scale-in"
-                        style={{ background: "var(--bg-elevated)", border: "1px solid var(--border)" }}
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                        onMouseDown={(e) => e.stopPropagation()}
+                      <Link
+                        href={`/chat/${chat.id}`}
+                        onClick={closeSidebar}
+                        aria-current={active ? "page" : undefined}
+                        className={`block rounded-lg py-2.5 pr-10 pl-3 text-[13px] ${
+                          active ? "font-semibold text-[var(--text-primary)]" : "text-[var(--text-secondary)]"
+                        }`}
                       >
+                        <p className="truncate">{chat.title}</p>
+                        <p className="mt-0.5 text-[11px] font-normal text-[var(--text-secondary)]">
+                          {formatDate(chat.updated_at)}
+                        </p>
+                      </Link>
+                      <div className="case-history-options" ref={menuOpen ? menuRef : undefined}>
                         <button
-                          onClick={(e) => { setMenuOpenId(null); handleRename(e, chat.id, chat.title); }}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-left transition-colors hover:bg-[var(--bg-tertiary)] cursor-pointer"
-                          style={{ color: "var(--text-secondary)", fontFamily: "var(--font-body)" }}
+                          type="button"
+                          aria-label={`Options for ${chat.title}`}
+                          aria-expanded={menuOpen}
+                          aria-controls={menuOpen ? menuId : undefined}
+                          onClick={() => setMenuOpenId(menuOpen ? null : chat.id)}
+                          className="case-history-trigger grid h-7 w-7 cursor-pointer place-items-center rounded-md text-[var(--text-secondary)] transition-[opacity,background-color] hover:bg-[var(--bg-elevated)]"
                         >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                            <circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" />
                           </svg>
-                          Rename
                         </button>
-                        <button
-                          onClick={(e) => { setMenuOpenId(null); handleDelete(e, chat.id); }}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 text-[12px] text-left transition-colors hover:bg-[var(--bg-tertiary)] cursor-pointer"
-                          style={{ color: "var(--danger)", fontFamily: "var(--font-body)" }}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                          </svg>
-                          Delete
-                        </button>
+                        {menuOpen && (
+                          <div
+                            id={menuId}
+                            className="case-history-menu absolute right-0 top-full mt-1 min-w-32 rounded-xl border border-[var(--border)] bg-[var(--bg-elevated)] p-1 shadow-xl"
+                          >
+                            <button
+                              type="button"
+                              className="block w-full cursor-pointer rounded-lg px-3 py-2 text-left text-xs text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-tertiary)]"
+                              onClick={() => { closeMenu(); void handleRename(chat.id, chat.title); }}
+                            >
+                              Rename
+                            </button>
+                            <button
+                              type="button"
+                              className="block w-full cursor-pointer rounded-lg px-3 py-2 text-left text-xs text-[#fca5a5] transition-colors hover:bg-[var(--bg-tertiary)]"
+                              onClick={() => { closeMenu(); void handleDelete(chat.id); }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </nav>
 
-      {/* Footer */}
-      {!collapsed && (
-        <div
-          className="px-4 py-3 text-[10px] tracking-wide uppercase font-medium hidden md:block"
-          style={{
-            borderTop: "1px solid var(--border)",
-            color: "var(--text-muted)",
-            fontFamily: "var(--font-body)",
-            letterSpacing: "0.08em",
-          }}
-        >
-          eCourts Intelligence Tool
-        </div>
-      )}
+        <p className="sidebar-expanded hidden border-t border-[var(--border)] px-4 py-4 text-[11px] text-[var(--text-secondary)] md:block">
+          Indian eCourts case summaries
+        </p>
 
-      {/* Resize handle — desktop only */}
-      {!collapsed && (
         <div
-          onMouseDown={startResizing}
+          onMouseDown={(event) => { event.preventDefault(); setIsResizing(true); }}
           onDoubleClick={toggleCollapse}
-          className="absolute top-0 right-0 w-[5px] h-full cursor-col-resize group z-10 hidden md:block"
-          style={{ transform: "translateX(50%)" }}
-        >
-          <div
-            className="absolute top-0 right-[2px] w-[1px] h-full transition-colors duration-150"
-            style={{
-              background: isResizing ? "var(--accent)" : "transparent",
-            }}
-          />
-          <div
-            className="absolute top-0 right-[2px] w-[1px] h-full transition-colors duration-150 group-hover:!bg-[var(--accent)]"
-            style={{ background: "transparent" }}
-          />
-        </div>
-      )}
-    </aside>
+          data-resize-handle
+          className="absolute inset-y-0 -right-0.5 z-10 hidden w-1 cursor-col-resize bg-transparent transition-colors hover:bg-[var(--accent)] md:block"
+        />
+      </aside>
     </>
   );
 }
