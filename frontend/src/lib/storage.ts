@@ -27,6 +27,7 @@ export function getAllChats(): ChatListItem[] {
         id: chat.id,
         cnr_num: chat.cnr_num,
         title: chat.title,
+        pinned: chat.pinned,
         created_at: chat.created_at,
         updated_at: chat.updated_at,
       });
