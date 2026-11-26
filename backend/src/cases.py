@@ -9,6 +9,7 @@ from src.errors import OperationError
 from src.llm import stream_followup, stream_summary, upload_fir_file
 from src.operations import Operation, Operations
 from src.scraper import scrape_case_data_interactive
+from src.titles import generate_case_title
 
 
 class Cases:
@@ -42,7 +43,7 @@ class Cases:
 
     def _generate_summary(
         self, operation: Operation, cnr_num: str, extract_fir: bool
-    ) -> None:
+    ) -> dict[str, str] | None:
         records = scrape_case_data_interactive(
             cnr_num,
             operation.publish,
@@ -61,6 +62,8 @@ class Cases:
         ) as chunks:
             summary = self._stream_text(operation, chunks)
         operation.ensure_connected()
+        title = generate_case_title(summary, cnr_num)
+        operation.ensure_connected()
         self.store.write(
             operation.chat_id,
             Conversation(
@@ -68,9 +71,11 @@ class Cases:
                 extract_fir=extract_fir,
                 fir_file_url=fir_url,
                 summary=summary,
+                title=title,
                 overview_img_b64=records["overview_img_b64"],
             ),
         )
+        return {"title": title} if title else None
 
     def _generate_followup(
         self, operation: Operation, conversation: Conversation, question: str

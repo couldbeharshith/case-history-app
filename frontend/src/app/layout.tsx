@@ -30,9 +30,9 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         <SidebarProvider>
-          <div className="app-shell flex h-dvh overflow-hidden">
+          <div className="app-shell flex h-dvh overflow-clip">
             <Sidebar />
-            <main className="min-w-0 flex-1 overflow-hidden">{children}</main>
+            <main className="min-w-0 flex-1 overflow-clip">{children}</main>
           </div>
         </SidebarProvider>
       </body>

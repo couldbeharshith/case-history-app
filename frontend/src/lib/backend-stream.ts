@@ -5,7 +5,7 @@ export const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
 export async function relayCaseStream(
   url: string,
   init: RequestInit,
-  onComplete: (text: string) => void,
+  onComplete: (text: string, metadata: Record<string, string> | null) => void,
 ): Promise<Response> {
   let upstream: Response;
   try {
@@ -30,6 +30,7 @@ export async function relayCaseStream(
   const pieces: string[] = [];
   let buffer = "";
   let completed = false;
+  let metadata: Record<string, string> | null = null;
   let failed = false;
   let cancelled = false;
 
@@ -41,7 +42,10 @@ export async function relayCaseStream(
         buffer += decoder.decode(value, { stream: !done });
         buffer = readEvents(buffer, (event) => {
           if (event.type === "text_chunk" && event.content) pieces.push(event.content);
-          if (event.type === "complete") completed = true;
+          if (event.type === "complete") {
+            completed = true;
+            metadata = event.metadata;
+          }
           if (streamError(event)) failed = true;
         });
 
@@ -55,7 +59,7 @@ export async function relayCaseStream(
           if (!text.trim() || (requiresCompletion && !completed)) {
             throw new Error("Incomplete case stream");
           }
-          onComplete(text);
+          onComplete(text, metadata);
         }
         controller.close();
       } catch {

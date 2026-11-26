@@ -12,7 +12,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     extract_fir: String(chat.extract_fir ?? true),
   });
 
-  return relayCaseStream(`${BACKEND_URL}/case-summary?${query}`, { signal: request.signal }, (summary) => {
+  return relayCaseStream(`${BACKEND_URL}/case-summary?${query}`, { signal: request.signal }, (summary, metadata) => {
     const latest = getChat(id);
     if (!latest) return;
     const timestamp = Date.now();
@@ -20,6 +20,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       { role: "user", content: `Generate case summary for CNR: ${chat.cnr_num}`, timestamp },
       { role: "assistant", content: summary, timestamp },
     ];
+    const title = metadata?.title?.trim();
+    const canNameCase = latest.title_source !== "manual"
+      && (latest.title_source === "generated" || latest.title === `Case ${latest.cnr_num}`);
+    if (title && canNameCase) {
+      latest.title = title;
+      latest.title_source = "generated";
+    }
     latest.updated_at = timestamp;
     saveChat(latest);
   });

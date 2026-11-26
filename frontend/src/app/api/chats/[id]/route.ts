@@ -30,19 +30,32 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Invalid update." }, { status: 400 });
+  }
   const chat = getChat(id);
   if (!chat) {
     return NextResponse.json({ error: "Chat not found" }, { status: 404 });
   }
-
-  const body = await request.json();
   if (body.messages) {
     chat.messages = body.messages;
   }
-  if (body.title) {
-    chat.title = body.title;
+  if (body.title !== undefined) {
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    if (!title) {
+      return NextResponse.json({ error: "Enter a case title." }, { status: 400 });
+    }
+    chat.title = title;
+    chat.title_source = "manual";
   }
-  chat.updated_at = Date.now();
+  if (body.pinned !== undefined) {
+    if (typeof body.pinned !== "boolean") {
+      return NextResponse.json({ error: "Invalid pin state." }, { status: 400 });
+    }
+    chat.pinned = body.pinned;
+  }
+  if (body.messages || body.title !== undefined) chat.updated_at = Date.now();
   saveChat(chat);
 
   return NextResponse.json(chat);

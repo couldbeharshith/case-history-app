@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, type CSSProperties } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { announceChatUpdate, subscribeToChatUpdates } from "../lib/chat-updates";
 import type { ChatListItem } from "../lib/types";
 import { useSidebar } from "./SidebarProvider";
 
@@ -23,6 +24,8 @@ function formatDate(timestamp: number) {
 
 export default function Sidebar() {
   const [chats, setChats] = useState<ChatListItem[]>([]);
+  const [search, setSearch] = useState("");
+  const [historyError, setHistoryError] = useState("");
   const [collapsed, setCollapsed] = useState(false);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -32,12 +35,33 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { open: mobileOpen, close: closeMobile } = useSidebar();
 
+  const terms = search.trim().toLowerCase().split(/\s+/);
+  const visibleCases = chats.filter((chat) => {
+    const text = `${chat.title} ${chat.cnr_num}`.toLowerCase();
+    return terms.every((term) => text.includes(term));
+  }).sort((first, second) =>
+    Number(Boolean(second.pinned)) - Number(Boolean(first.pinned))
+    || second.updated_at - first.updated_at
+  );
+
+  useEffect(() => subscribeToChatUpdates((entry) => {
+    setChats((current) => [entry, ...current.filter((chat) => chat.id !== entry.id)]);
+  }), []);
+
   useEffect(() => {
     const request = new AbortController();
     fetch("/api/chats", { signal: request.signal })
-      .then((response) => response.json())
-      .then(setChats)
-      .catch(() => {});
+      .then((response) => {
+        if (!response.ok) throw new Error();
+        return response.json();
+      })
+      .then((entries: ChatListItem[]) => {
+        setHistoryError("");
+        setChats(entries);
+      })
+      .catch(() => {
+        if (!request.signal.aborted) setHistoryError("Couldn’t load case history.");
+      });
     return () => request.abort();
   }, [pathname]);
 
@@ -93,24 +117,35 @@ export default function Sidebar() {
   }
 
   async function handleDelete(id: string) {
-    await fetch(`/api/chats/${id}`, { method: "DELETE" });
-    setChats((previous) => previous.filter((chat) => chat.id !== id));
+    setHistoryError("");
+    try {
+      const response = await fetch(`/api/chats/${id}`, { method: "DELETE" });
+      if (!response.ok) throw new Error();
+      setChats((previous) => previous.filter((chat) => chat.id !== id));
+    } catch {
+      setHistoryError("Couldn’t delete this case. Try again.");
+    }
   }
 
-  async function handleRename(id: string, currentTitle: string) {
-    const title = prompt("Rename case:", currentTitle)?.trim();
-    if (!title || title === currentTitle) return;
-
+  async function updateCase(id: string, changes: { title?: string; pinned?: boolean }) {
+    setHistoryError("");
     try {
       const response = await fetch(`/api/chats/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify(changes),
       });
-      if (response.ok) {
-        setChats((previous) => previous.map((chat) => (chat.id === id ? { ...chat, title } : chat)));
-      }
-    } catch { /* Keep the current title. */ }
+      if (!response.ok) throw new Error();
+      const updated: ChatListItem = await response.json();
+      announceChatUpdate(updated);
+    } catch {
+      setHistoryError("Couldn’t update this case. Try again.");
+    }
+  }
+
+  function handleRename(id: string, currentTitle: string) {
+    const title = prompt("Rename case:", currentTitle)?.trim();
+    if (title && title !== currentTitle) void updateCase(id, { title });
   }
 
   function closeMenu() {
@@ -197,18 +232,45 @@ export default function Sidebar() {
             </Link>
           </div>
 
-          <h2 className="px-4 pt-6 pb-2 text-xs font-semibold text-[var(--text-secondary)]">Recent cases</h2>
+          <h2 className="px-4 pt-6 pb-2 text-xs font-semibold text-[var(--text-secondary)]">Case history</h2>
+          {chats.length > 0 && (
+            <div className="case-history-search mx-3 mb-2 flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--bg-primary)] px-2.5">
+              <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" className="shrink-0 text-[var(--text-muted)]">
+                <circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" />
+              </svg>
+              <input
+                type="search"
+                aria-label="Search cases by title or CNR"
+                placeholder="Search cases"
+                className="min-w-0 flex-1 bg-transparent py-2.5 text-base placeholder:text-[var(--text-muted)] md:text-[13px]"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && search) {
+                    event.stopPropagation();
+                    setSearch("");
+                  }
+                }}
+              />
+            </div>
+          )}
+          {historyError && <p role="alert" className="mx-4 mb-2 text-xs text-[#fca5a5]">{historyError}</p>}
           <div className="flex-1 overflow-y-auto px-2 py-1">
             {chats.length === 0 ? (
               <p className="px-2 py-2 text-xs leading-relaxed text-[var(--text-secondary)]">
                 Your lookups will appear here.
               </p>
+            ) : visibleCases.length === 0 ? (
+              <p role="status" className="px-2 py-2 text-xs text-[var(--text-secondary)]">
+                No cases match your search.
+              </p>
             ) : (
               <ul className="space-y-0.5">
-                {chats.map((chat) => {
+                {visibleCases.map((chat) => {
                   const active = pathname === `/chat/${chat.id}`;
                   const menuOpen = menuOpenId === chat.id;
                   const menuId = `case-actions-${chat.id}`;
+                  const hasNamedTitle = chat.title !== `Case ${chat.cnr_num}`;
 
                   return (
                     <li
@@ -226,9 +288,17 @@ export default function Sidebar() {
                           active ? "font-semibold text-[var(--text-primary)]" : "text-[var(--text-secondary)]"
                         }`}
                       >
-                        <p className="truncate">{chat.title}</p>
-                        <p className="mt-0.5 text-[11px] font-normal text-[var(--text-secondary)]">
-                          {formatDate(chat.updated_at)}
+                        <p className="flex items-center gap-1.5">
+                          {chat.pinned && (
+                            <svg role="img" aria-label="Pinned" className="shrink-0 text-[var(--accent)]" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M16 3H8l1 6-3 3v2h12v-2l-3-3 1-6Zm-4 11v7" />
+                            </svg>
+                          )}
+                          <span className="truncate">{chat.title}</span>
+                        </p>
+                        <p className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[11px] font-normal text-[var(--text-secondary)]">
+                          {hasNamedTitle && <span className="[font-family:var(--font-mono)]">{chat.cnr_num}</span>}
+                          <span>{formatDate(chat.updated_at)}</span>
                         </p>
                       </Link>
                       <div className="case-history-options" ref={menuOpen ? menuRef : undefined}>
@@ -252,9 +322,16 @@ export default function Sidebar() {
                             <button
                               type="button"
                               className="block w-full cursor-pointer rounded-lg px-3 py-2 text-left text-xs text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-tertiary)]"
-                              onClick={() => { closeMenu(); void handleRename(chat.id, chat.title); }}
+                              onClick={() => { closeMenu(); handleRename(chat.id, chat.title); }}
                             >
                               Rename
+                            </button>
+                            <button
+                              type="button"
+                              className="block w-full cursor-pointer rounded-lg px-3 py-2 text-left text-xs text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-tertiary)]"
+                              onClick={() => { closeMenu(); void updateCase(chat.id, { pinned: !chat.pinned }); }}
+                            >
+                              {chat.pinned ? "Unpin case" : "Pin case"}
                             </button>
                             <button
                               type="button"

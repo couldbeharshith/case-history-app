@@ -19,6 +19,7 @@ class Conversation(BaseModel):
     extract_fir: bool = True
     fir_file_url: str | None = None
     summary: str
+    title: str | None = None
     messages: list[Message] = Field(default_factory=list)
     overview_img_b64: str | None = None
 

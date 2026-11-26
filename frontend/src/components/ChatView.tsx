@@ -6,8 +6,10 @@ import Image from "next/image";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { readEvents, streamError, type CaseStreamEvent } from "../lib/case-stream";
+import { announceChatUpdate, subscribeToChatUpdates } from "../lib/chat-updates";
 import type { Chat, ChatMessage } from "../lib/types";
 import { useSidebar } from "./SidebarProvider";
+import CaseActions from "./CaseActions";
 
 // ── Copy button ────────────────────────────────────────────────────────────
 function CopyButton({ text }: { text: string }) {
@@ -104,7 +106,11 @@ function ProgressSteps({ steps, currentStep }: { steps: string[]; currentStep: s
   );
 }
 
-function CaseDialog({ titleId, children }: { titleId: string; children: ReactNode }) {
+function CaseDialog({ titleId, onStop, children }: {
+  titleId: string;
+  onStop: () => void;
+  children: ReactNode;
+}) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -121,6 +127,13 @@ function CaseDialog({ titleId, children }: { titleId: string; children: ReactNod
       onCancel={(event) => event.preventDefault()}
     >
       {children}
+      <button
+        type="button"
+        onClick={onStop}
+        className="mx-auto mt-3 block min-h-8 cursor-pointer rounded-md px-2 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+      >
+        Stop lookup
+      </button>
     </dialog>
   );
 }
@@ -130,11 +143,13 @@ function CaptchaModal({
   captchaImg,
   errorMsg,
   submitting,
+  onStop,
   onSubmit,
 }: {
   captchaImg: string;
   errorMsg?: string;
   submitting: boolean;
+  onStop: () => void;
   onSubmit: (text: string) => void;
 }) {
   const [value, setValue] = useState("");
@@ -144,7 +159,7 @@ function CaptchaModal({
   };
 
   return (
-    <CaseDialog titleId="captcha-title">
+    <CaseDialog titleId="captcha-title" onStop={onStop}>
       <h3 id="captcha-title" className="text-base font-bold mb-4" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
         Complete the CAPTCHA
       </h3>
@@ -196,10 +211,11 @@ function CaptchaModal({
 }
 
 // ── District / PS Modal ────────────────────────────────────────────────────
-function DistrictPsModal({ policeStation, errorMsg, submitting, onSubmit }: {
+function DistrictPsModal({ policeStation, errorMsg, submitting, onStop, onSubmit }: {
   policeStation?: string | null;
   errorMsg?: string;
   submitting: boolean;
+  onStop: () => void;
   onSubmit: (district: string, ps: string) => void;
 }) {
   const [allPs, setAllPs] = useState<Record<string, string[]> | null>(null);
@@ -234,7 +250,7 @@ function DistrictPsModal({ policeStation, errorMsg, submitting, onSubmit }: {
   };
 
   return (
-    <CaseDialog titleId="station-title">
+    <CaseDialog titleId="station-title" onStop={onStop}>
       <h3 id="station-title" className="text-base font-bold mb-1" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
         Select a police station
       </h3>
@@ -396,6 +412,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasStarted, setHasStarted] = useState(false);
+  const [lookupStopped, setLookupStopped] = useState(false);
 
   // Follow-up state
   const [inputValue, setInputValue] = useState("");
@@ -418,6 +435,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
   const followLatest = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
@@ -464,6 +482,15 @@ export default function ChatView({ chatId }: ChatViewProps) {
     observer.observe(content);
     return () => observer.disconnect();
   }, [hasChat]);
+
+  useEffect(() => subscribeToChatUpdates((entry) => {
+    if (entry.id === chatId) {
+      setChat((current) => current && current.title !== entry.title
+        ? { ...current, title: entry.title }
+        : current
+      );
+    }
+  }), [chatId]);
 
   // Load chat data
   useEffect(() => {
@@ -523,12 +550,14 @@ export default function ChatView({ chatId }: ChatViewProps) {
   );
 
   // ── Initial summary stream (SSE) ─────────────────────────────────────
-  const startStream = useCallback(async () => {
-    if (hasStarted || isStreaming) return;
+  const startStream = useCallback(async (retry = false) => {
+    if (activeRequest.current || (hasStarted && !retry)) return;
     const request = new AbortController();
     activeRequest.current = request;
+    followLatest.current = true;
     setHasStarted(true);
     setIsStreaming(true);
+    setLookupStopped(false);
     setError(null);
     setStreamText("");
     setLogSteps([]);
@@ -564,6 +593,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
       if (!response.ok) throw new Error("Couldn’t reload the saved case.");
       const updatedChat: Chat = await response.json();
       setChat(updatedChat);
+      announceChatUpdate(updatedChat);
       setStreamText("");
       setLogSteps([]);
       setCurrentStep((prev) => (prev === null ? prev : null));
@@ -578,7 +608,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
       setShowDistrictPsModal(false);
       setIsStreaming(false);
     }
-  }, [chatId, hasStarted, isStreaming, handleSSEvent]);
+  }, [chatId, hasStarted, handleSSEvent]);
 
   // ── Follow-up message stream (SSE) ────────────────────────────────────
   const sendFollowUp = useCallback(async () => {
@@ -635,6 +665,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
       if (!response.ok) throw new Error("Couldn’t reload the saved case.");
       const updatedChat: Chat = await response.json();
       setChat(updatedChat);
+      announceChatUpdate(updatedChat);
       setFollowUpStreamText("");
     } catch (err) {
       if (request.signal.aborted) return;
@@ -651,6 +682,14 @@ export default function ChatView({ chatId }: ChatViewProps) {
       setIsFollowingUp(false);
     }
   }, [chatId, inputValue, isFollowingUp, isStreaming]);
+
+  function stopLookup() {
+    activeRequest.current?.abort();
+    setStreamText("");
+    setLogSteps([]);
+    setCurrentStep(null);
+    setLookupStopped(true);
+  }
 
   async function sendManualInput(values: Record<string, string>, onAccepted: () => void) {
     const request = activeRequest.current;
@@ -695,7 +734,8 @@ export default function ChatView({ chatId }: ChatViewProps) {
   }
 
   const conversationMessages = chat.messages.slice(1);
-  const summaryDone = !isStreaming && conversationMessages.length > 0;
+  const summary = chat.messages.find((message) => message.role === "assistant");
+  const summaryDone = !isStreaming && Boolean(summary);
   const busyStreaming = isStreaming || isFollowingUp;
 
   return (
@@ -703,6 +743,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
       {/* Modals */}
       {captchaModal && (
         <CaptchaModal
+          onStop={stopLookup}
           key={captchaModal.img}
           captchaImg={captchaModal.img}
           errorMsg={manualError || captchaModal.error}
@@ -715,6 +756,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
       )}
       {showDistrictPsModal && (
         <DistrictPsModal
+          onStop={stopLookup}
           policeStation={districtPsHint}
           errorMsg={manualError}
           submitting={submittingManualInput}
@@ -726,11 +768,11 @@ export default function ChatView({ chatId }: ChatViewProps) {
       )}
 
       {/* Floating header pills */}
-      <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
-        <div className="flex items-center justify-between px-3 md:px-5 pt-3 md:pt-4">
+      <div className="case-toolbar absolute top-0 left-0 right-0 z-20 pointer-events-none">
+        <div className="flex items-center justify-between gap-2 px-3 md:px-5 pt-3 md:pt-4">
           {/* Left pill: hamburger + title */}
           <div
-            className="pointer-events-auto flex items-center gap-2 pl-1 pr-3 md:pl-3 md:pr-4 py-1.5 md:py-2 rounded-full shadow-lg"
+            className="pointer-events-auto flex min-w-0 items-center gap-2 pl-1 pr-3 md:pl-3 md:pr-4 py-1.5 md:py-2 rounded-full shadow-lg"
             style={{
               background: "rgba(17, 17, 17, 0.85)",
               backdropFilter: "blur(12px)",
@@ -754,7 +796,8 @@ export default function ChatView({ chatId }: ChatViewProps) {
             {busyStreaming && (
               <div className="w-1.5 h-1.5 rounded-full animate-glow shrink-0" style={{ background: "var(--accent)" }} />
             )}
-            <h1 className="text-[13px] font-bold tracking-tight truncate max-w-[180px] md:max-w-none" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
+            <h1 className="min-w-0 truncate text-[13px] font-bold tracking-tight"
+              title={chat.title} style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
               {chat.title}
             </h1>
             {busyStreaming && (
@@ -767,32 +810,17 @@ export default function ChatView({ chatId }: ChatViewProps) {
               </span>
             )}
           </div>
-          {/* Right pill: CNR badge */}
-          <div
-            className="pointer-events-auto px-2.5 md:px-3 py-1.5 md:py-2 rounded-full shadow-lg hidden sm:block"
-            style={{
-              background: "rgba(17, 17, 17, 0.85)",
-              backdropFilter: "blur(12px)",
-              WebkitBackdropFilter: "blur(12px)",
-              border: "1px solid var(--border-accent)",
-            }}
-          >
-            <span
-              className="text-[10px] md:text-xs font-medium"
-              style={{
-                color: "var(--accent)",
-                fontFamily: "var(--font-mono)",
-                letterSpacing: "0.03em",
-              }}
-            >
-              {chat.cnr_num}
-            </span>
-          </div>
+          <CaseActions
+            chat={chat}
+            summary={summaryDone ? summary : undefined}
+            summaryRef={summaryRef}
+            onStop={isStreaming ? stopLookup : undefined}
+          />
         </div>
       </div>
 
       {/* Messages area */}
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} onScroll={handleScroll} data-case-viewport className="flex-1 overflow-y-auto">
         <div ref={contentRef} className="max-w-3xl mx-auto px-4 md:px-6 pt-16 md:pt-20 pb-36 md:pb-40">
 
           {/* Initial user message */}
@@ -856,7 +884,11 @@ export default function ChatView({ chatId }: ChatViewProps) {
             if (isLastAssistant) return null;
 
             return (
-              <div key={idx} className="mb-8 md:mb-10">
+              <div
+                key={idx}
+                ref={msg === summary ? summaryRef : undefined}
+                className={msg === summary ? "case-summary mb-8 md:mb-10" : "mb-8 md:mb-10"}
+              >
                 {msg.role === "assistant" ? (
                   <AssistantBubble content={msg.content} />
                 ) : (
@@ -873,28 +905,27 @@ export default function ChatView({ chatId }: ChatViewProps) {
             </div>
           )}
 
-          {/* Error state */}
-          {error && (
+          {(error || lookupStopped) && (
             <div
-              className="ui-appear mt-6 md:mt-8 rounded-xl overflow-hidden"
-              role="alert"
-              style={{ background: "rgba(239, 68, 68, 0.06)", border: "1px solid rgba(239, 68, 68, 0.12)" }}
+              className={`ui-appear mt-6 rounded-xl border p-4 md:mt-8 md:p-5 ${
+                lookupStopped
+                  ? "border-[var(--border-accent)] bg-[var(--accent-glow)]"
+                  : "border-red-500/20 bg-red-500/[0.06]"
+              }`}
             >
-              <div className="px-4 md:px-5 py-3 md:py-4 flex items-start gap-3">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="8" x2="12" y2="12" />
-                  <line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-                <div>
-                  <p className="text-sm font-semibold mb-0.5" style={{ color: "var(--danger)", fontFamily: "var(--font-display)" }}>
-                    Request failed
-                  </p>
-                  <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
-                    {error}
-                  </p>
-                </div>
+              <div role={lookupStopped ? "status" : "alert"}>
+                <p className="text-sm font-semibold [font-family:var(--font-display)]">
+                  {lookupStopped ? "Lookup stopped" : "Request failed"}
+                </p>
+                <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">
+                  {lookupStopped ? "Start again when you’re ready." : error}
+                </p>
               </div>
+              {!summary && !isStreaming && (
+                <button className="case-action mt-3" type="button" onClick={() => void startStream(true)}>
+                  Retry lookup
+                </button>
+              )}
             </div>
           )}
         </div>

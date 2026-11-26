@@ -161,13 +161,15 @@ class Operations:
                 operation.disconnected.set()
 
     def start(
-        self, operation: Operation, work: Callable[[], None]
+        self, operation: Operation, work: Callable[[], dict[str, str] | None]
     ) -> StreamingResponse:
         def run() -> None:
             error = None
             try:
-                work()
-                operation.publish(SSEvent(type=SSEventType.COMPLETE, content=None))
+                metadata = work()
+                operation.publish(
+                    SSEvent(type=SSEventType.COMPLETE, content=None, metadata=metadata)
+                )
             except ClientDisconnected:
                 return
             except OperationError as exc:
