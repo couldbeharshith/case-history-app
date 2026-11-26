@@ -144,6 +144,30 @@ textarea:focus-visible {
 .markdown-body strong {
   font-weight: 700;
 }
+.markdown-body h2[data-hearing-timeline] + ul {
+  list-style: none;
+  padding-left: 0;
+}
+.markdown-body h2[data-hearing-timeline] + ul > li {
+  margin: 0;
+  padding: 0.65rem 0;
+  line-height: 1.65;
+}
+.markdown-body h2[data-hearing-timeline] + ul > li + li {
+  border-top: 1px solid var(--border);
+}
+.markdown-body h2[data-hearing-timeline] + ul > li > p:first-child {
+  margin-top: 0;
+}
+.markdown-body h2[data-hearing-timeline] + ul > li > p:last-child {
+  margin-bottom: 0;
+}
+.markdown-body h2[data-hearing-timeline] + ul > li > strong:first-child,
+.markdown-body h2[data-hearing-timeline] + ul > li > p:first-child > strong:first-child {
+  display: block;
+  margin-bottom: 0.15rem;
+  color: var(--text-primary);
+}
 .markdown-body em {
   color: var(--text-secondary);
   font-style: italic;

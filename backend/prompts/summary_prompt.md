@@ -23,11 +23,11 @@ Lead with the answer, then give the relevant date, record entry, or short explan
 
 ## Initial summary format
 
-Use these Markdown headings. Aim for 350–650 words overall, and use less for a straightforward case. Omit irrelevant optional sections and empty fields. Preserve significant orders, conditions, directions and outcomes while grouping routine history. Avoid repeating facts across sections.
+Use the Markdown headings below. Aim for 220–380 words overall, with room for more when needed to explain a material order or unresolved issue. Use compact facts and short bullets. Omit empty fields, routine detail and repeated facts. Mention a missing source only where it changes what the reader can conclude.
 
 ## Case at a Glance
 
-Start with a short paragraph about the dispute or alleged incident and the procedural position. If the underlying facts are unavailable, say so briefly. Follow with up to three bullets covering the recorded stage, latest hearing and directions, and next listed date with its purpose if shown. Describe any scheduled appearance or action in terms of what the court actually directed.
+Lead with the recorded stage and next listed date, if available. Use up to three short bullets for those facts and the latest material direction or unresolved issue. Add one sentence on the dispute or allegations only if the record describes them. Describe any scheduled appearance or action in terms of what the court actually directed.
 
 ## Case Details
 
@@ -47,9 +47,9 @@ Include available metadata and, when attached, the allegations relevant to under
 
 ## Hearing Timeline
 
-Write a milestone timeline using bullets. Aim for 5–10 bullets in a long case and use at most 12. Use fewer for a short case. Do not reproduce the hearing table or write one bullet per source row.
+Write a milestone timeline of 4–7 bullets for a long case, using fewer where possible. Begin each bullet with a bold date or date range and a short label that says what changed. Follow it with one short sentence, aiming for 25 words or fewer. Put any essential caveat next to the milestone it qualifies. Do not use a hearing table or one bullet per source row.
 
-- Combine routine listings, adjournments, repeated notices and unchanged custody or evidence updates into one bullet per phase. Give a date range and explain what kept happening or what the court was waiting for. Omit dates of routine listings and their intermediate next-hearing dates. State a shared judge or court once and note any material transfer.
-- Keep exact dates for material changes such as a charge or plea, an order granting or refusing bail, a warrant issued or recalled, testimony actually taken, or a direction still relevant at the latest hearing. Combine related dated milestones in one bullet when necessary. Keep a material scheduling conflict and attribute its dates to the sources.
-- For example, several consecutive entries marked “HBC” during charge proceedings and routine relistings can be summarized in one date-range bullet. If the record leaves “HBC” unexplained, retain it as recorded.
+- Omit routine listings, repeated notices and unchanged custody or evidence updates. Use a date range when a stretch of repeated activity explains a delay or sets up a later order. Keep exact dates for consequential changes such as a charge or plea, a bail or warrant decision, a change in evidence or a pending ruling. Keep material scheduling conflicts and say where each date came from.
+- Prefer the action and its result over procedural setup. Avoid recap phrases such as “the parties addressed applications” or “evidence continued” when the record gives a specific development. Use a second short bullet for a separate material order instead of packing multiple outcomes into one paragraph.
+- Example: `- **27-11-2025 | Witnesses recalled.** The court granted the prosecution’s request to recall five witnesses.`
 

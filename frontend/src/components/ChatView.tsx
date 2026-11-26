@@ -12,8 +12,13 @@ import { useSidebar } from "./SidebarProvider";
 import CaseActions from "./CaseActions";
 
 const tableDate = /^(?:\d{1,2}[-/]\d{1,2}[-/]\d{4}|\d{4}-\d{2}-\d{2})$/;
+const hearingTimelineHeading = /^(hearing timeline|case history)$/i;
 
 const markdownComponents: Components = {
+  h2: ({ children }) => {
+    const isTimeline = typeof children === "string" && hearingTimelineHeading.test(children.trim());
+    return <h2 data-hearing-timeline={isTimeline ? "" : undefined}>{children}</h2>;
+  },
   table: ({ children }) => (
     <div className="markdown-table-scroll">
       <table>{children}</table>
@@ -392,19 +397,24 @@ function AssistantBubble({ content, isStreaming = false }: { content: string; is
   );
 }
 
-// ── User bubble ────────────────────────────────────────────────────────────
+function UserMessageHeader() {
+  return (
+    <div className="mb-1.5 flex items-center gap-2.5">
+      <span className="grid size-7 shrink-0 place-items-center rounded-full border border-[#365a5b] bg-[#193537] text-[#9fe1da] md:size-8">
+        <svg aria-hidden="true" className="size-[17px]" viewBox="0 0 24 24" fill="currentColor">
+          <circle cx="12" cy="8" r="3.5" />
+          <path d="M5 19a7 7 0 0 1 14 0 1 1 0 0 1-1 1H6a1 1 0 0 1-1-1Z" />
+        </svg>
+      </span>
+      <p className="text-[11px] font-semibold uppercase tracking-widest text-[var(--text-muted)]">You</p>
+    </div>
+  );
+}
+
 function UserBubble({ content }: { content: string }) {
   return (
     <div>
-      <div className="flex items-center gap-2.5 mb-1.5">
-        <div
-          className="w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center text-[10px] md:text-[11px] font-bold shrink-0"
-          style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)", border: "1px solid var(--border)", fontFamily: "var(--font-display)" }}
-        >
-          U
-        </div>
-        <p className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>You</p>
-      </div>
+      <UserMessageHeader />
       <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>{content}</p>
       <div className="mt-2"><CopyButton text={content} /></div>
     </div>
@@ -835,17 +845,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
 
           {/* Initial user message */}
           <div className="mb-8 md:mb-10">
-            <div className="flex items-center gap-2.5 mb-1.5">
-              <div
-                className="w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center text-[10px] md:text-[11px] font-bold shrink-0"
-                style={{ background: "var(--bg-tertiary)", color: "var(--text-muted)", border: "1px solid var(--border)", fontFamily: "var(--font-display)" }}
-              >
-                U
-              </div>
-              <p className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>
-                You
-              </p>
-            </div>
+            <UserMessageHeader />
             <p className="text-sm leading-relaxed" style={{ color: "var(--text-secondary)" }}>
               Generate case summary for{" "}
               <span
