@@ -1,6 +1,9 @@
 """Playwright browser lifecycle."""
 
-from playwright.sync_api import sync_playwright
+from contextlib import ExitStack
+from typing import Self
+
+from playwright.sync_api import Page, Route, sync_playwright
 
 from src.config import get_logger
 
@@ -30,17 +33,13 @@ _BROWSER_ARGS: list[str] = [
 class Browser:
     """Thin wrapper around Playwright that blocks unnecessary resources."""
 
-    __slots__ = ("_pw", "_browser", "_context", "page", "_headless")
-
     def __init__(self, headless: bool = False) -> None:
-        self._pw = None
-        self._browser = None
-        self._context = None
-        self.page = None
+        self._resources = ExitStack()
         self._headless = headless
+        self.page: Page
 
     @staticmethod
-    def _route_handler(route) -> None:
+    def _route_handler(route: Route) -> None:
         req = route.request
         rtype = req.resource_type
 
@@ -57,34 +56,28 @@ class Browser:
 
         route.continue_()
 
-    def start(self, *, headless: bool | None = None) -> "Browser":
-        """Start browser instance with resource blocking enabled."""
+    def start(self, *, headless: bool | None = None) -> Self:
         if headless is None:
             headless = self._headless
 
-        self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch(
-            headless=headless,
-            args=_BROWSER_ARGS,
-        )
-        self._context = self._browser.new_context(
-            java_script_enabled=True,
-            bypass_csp=True,
-        )
-        self.page = self._context.new_page()
-        self.page.route("**/*", self._route_handler)
+        with ExitStack() as resources:
+            playwright = resources.enter_context(sync_playwright())
+            browser = playwright.chromium.launch(headless=headless, args=_BROWSER_ARGS)
+            resources.callback(browser.close)
+            context = browser.new_context(java_script_enabled=True, bypass_csp=True)
+            resources.callback(context.close)
+            self.page = context.new_page()
+            self.page.route("**/*", self._route_handler)
+            self._resources = resources.pop_all()
+
         logger.debug("Browser started (headless=%s)", headless)
         return self
 
     def stop(self) -> None:
-        if self._browser:
-            self._browser.close()
-        if self._pw:
-            self._pw.stop()
+        self._resources.close()
         logger.debug("Browser stopped")
 
-    # Python context manager support
-    def __enter__(self) -> "Browser":
+    def __enter__(self) -> Self:
         return self.start()
 
     def __exit__(self, *exc) -> None:

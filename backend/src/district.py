@@ -1,51 +1,29 @@
-from pickle import load
+import re
+from functools import cache
 
-with open("data/all_ps.bin", "rb") as f:
-    all_ps: dict[str, list[str]] = load(f)
-    
-ps_variants = {
-    (
-        "hulsoor",
-        "halasuru",
-        "halasur",
-        "halasooru",
-        "halasoor",
-        "halsoor",
-        "alsoor",
-        "ulsoor",
-        "hulsur",
-        "halsuru",
-    ): "Halasur",
-}
+from src.config import DATA_DIR
+from src.conversations import load_stations
 
-def normalize_case(name: str) -> str:
-    words = name.lower().split()
-    result = []
 
-    for w in words:
-        if w == "ps": result.append("PS")
-        else: result.append(w.capitalize())
-
-    return " ".join(result)
+@cache
+def _station_districts() -> dict[str, str]:
+    index: dict[str, str] = {}
+    for district, stations in load_stations(DATA_DIR / "all_ps.json").items():
+        for station in stations:
+            index.setdefault(station, district)
+    return index
 
 
 def get_district_and_ps(ps_name: str) -> tuple[str | None, str]:
-    # ps_name will always be in uppercase
-    #TODO: fuzzy search and better pattern matching
-    # normalize ps name by removing common suffixes and correcting known variants
-    # ps_name = ps_name.lower().replace(" police station", "").replace(" ps", "")
-    # for variants, standard_name in ps_variants.items():
-    #     if ps_name in variants:
-    #         ps_name = standard_name
-    
     if "HULSOOR" in ps_name.upper():
-        ps_name = ps_name.replace("HULSOOR", "Halasur")
-        return "Bengaluru City", normalize_case(ps_name)
-    
-    ps_name = normalize_case(ps_name)
-    
-    for key in all_ps.keys():
-        ps_list = all_ps[key]
-        if ps_name in ps_list:
-            return key, ps_name
-    return None, ps_name
+        ps_name = re.sub("hulsoor", "Halasur", ps_name, flags=re.IGNORECASE)
+        return "Bengaluru City", _normalize_case(ps_name)
+
+    station = _normalize_case(ps_name)
+    return _station_districts().get(station), station
+
+
+def _normalize_case(name: str) -> str:
+    return " ".join(
+        "PS" if word == "ps" else word.capitalize() for word in name.lower().split()
+    )
