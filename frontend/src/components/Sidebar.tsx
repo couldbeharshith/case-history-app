@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, type CSSProperties } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { announceChatUpdate, subscribeToChatUpdates } from "../lib/chat-updates";
@@ -184,9 +185,7 @@ export default function Sidebar() {
       >
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-[var(--border)] px-3">
           <Link href="/" className="sidebar-expanded flex min-w-0 flex-1 items-center gap-2.5" onClick={closeSidebar}>
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--accent)] text-xs font-extrabold text-[var(--bg-primary)] [font-family:var(--font-display)]">
-              CF
-            </span>
+            <Image src="/icon.svg" alt="" width={32} height={32} className="size-8 shrink-0" />
             <span className="truncate text-sm font-bold tracking-tight [font-family:var(--font-display)]">
               CaseFlow
             </span>

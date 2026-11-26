@@ -3,13 +3,28 @@
 import { useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { readEvents, streamError, type CaseStreamEvent } from "../lib/case-stream";
 import { announceChatUpdate, subscribeToChatUpdates } from "../lib/chat-updates";
 import type { Chat, ChatMessage } from "../lib/types";
 import { useSidebar } from "./SidebarProvider";
 import CaseActions from "./CaseActions";
+
+const tableDate = /^(?:\d{1,2}[-/]\d{1,2}[-/]\d{4}|\d{4}-\d{2}-\d{2})$/;
+
+const markdownComponents: Components = {
+  table: ({ children }) => (
+    <div className="markdown-table-scroll">
+      <table>{children}</table>
+    </div>
+  ),
+  td: ({ node, children, ...props }) => {
+    const date = node?.children[0];
+    const isDate = node?.children.length === 1 && date?.type === "text" && tableDate.test(date.value.trim());
+    return <td {...props}>{isDate ? <span className="markdown-table-date">{children}</span> : children}</td>;
+  },
+};
 
 // ── Copy button ────────────────────────────────────────────────────────────
 function CopyButton({ text }: { text: string }) {
@@ -350,12 +365,7 @@ function AssistantBubble({ content, isStreaming = false }: { content: string; is
     <div>
       {/* Header row: avatar + label */}
       <div className="flex items-center gap-2.5 mb-3">
-        <div
-          className="w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center text-[10px] md:text-[11px] font-extrabold shrink-0"
-          style={{ background: "var(--accent)", color: "var(--bg-primary)", fontFamily: "var(--font-display)" }}
-        >
-          CF
-        </div>
+        <Image src="/icon.svg" alt="" width={32} height={32} className="size-7 shrink-0 md:size-8" />
         <p className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>
           CaseFlow
         </p>
@@ -364,7 +374,7 @@ function AssistantBubble({ content, isStreaming = false }: { content: string; is
       {/* Content — full width */}
       {content ? (
         <div className="markdown-body text-[14px]">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>{content}</ReactMarkdown>
         </div>
       ) : (
         isStreaming && (
@@ -821,7 +831,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
 
       {/* Messages area */}
       <div ref={scrollRef} onScroll={handleScroll} data-case-viewport className="flex-1 overflow-y-auto">
-        <div ref={contentRef} className="max-w-3xl mx-auto px-4 md:px-6 pt-16 md:pt-20 pb-36 md:pb-40">
+        <div ref={contentRef} className="max-w-4xl mx-auto px-4 md:px-6 pt-16 md:pt-20 pb-36 md:pb-40">
 
           {/* Initial user message */}
           <div className="mb-8 md:mb-10">
@@ -840,7 +850,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
               Generate case summary for{" "}
               <span
                 className="font-semibold px-1.5 py-0.5 rounded-md"
-                style={{ color: "var(--accent)", fontFamily: "var(--font-mono)", background: "var(--accent-glow)", fontSize: "0.85em", letterSpacing: "0.03em" }}
+                style={{ color: "var(--text-secondary)", fontFamily: "var(--font-mono)", background: "var(--bg-tertiary)", fontSize: "0.85em", letterSpacing: "0.03em" }}
               >
                 {chat.cnr_num}
               </span>
@@ -857,9 +867,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
             <div className="mb-8 md:mb-10">
               {!streamText && (
                 <div className="ui-appear flex items-center gap-2.5 mb-2">
-                  <div className="w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center text-[10px] md:text-[11px] font-extrabold shrink-0" style={{ background: "var(--accent)", color: "var(--bg-primary)", fontFamily: "var(--font-display)" }}>
-                    CF
-                  </div>
+                  <Image src="/icon.svg" alt="" width={32} height={32} className="size-7 shrink-0 md:size-8" />
                   <p className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
                     CaseFlow
                   </p>
