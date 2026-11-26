@@ -11,8 +11,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
 };
 
 export default function RootLayout({
@@ -32,9 +30,9 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         <SidebarProvider>
-          <div className="flex h-screen overflow-hidden">
+          <div className="app-shell flex h-dvh overflow-hidden">
             <Sidebar />
-            <main className="flex-1 overflow-hidden">{children}</main>
+            <main className="min-w-0 flex-1 overflow-hidden">{children}</main>
           </div>
         </SidebarProvider>
       </body>
