@@ -988,7 +988,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
                 aria-label="Ask a follow-up"
                 placeholder="Ask a follow-up…"
                 disabled={busyStreaming}
-                className="flex-1 bg-transparent resize-none outline-none focus:outline-none text-sm leading-relaxed"
+                className="flex-1 self-center bg-transparent resize-none outline-none focus:outline-none text-sm leading-6"
                 style={{
                   color: "var(--text-primary)",
                   fontFamily: "var(--font-body)",

@@ -23,7 +23,7 @@ Lead with the answer, then give the relevant date, record entry, or short explan
 
 ## Initial summary format
 
-Use these Markdown headings. Omit irrelevant optional sections and empty fields. Preserve significant events, dates, conditions, witness directions and recorded outcomes.
+Use these Markdown headings. Aim for 350–650 words overall, and use less for a straightforward case. Omit irrelevant optional sections and empty fields. Preserve significant orders, conditions, directions and outcomes while grouping routine history. Avoid repeating facts across sections.
 
 ## Case at a Glance
 
@@ -47,5 +47,9 @@ Include available metadata and, when attached, the allegations relevant to under
 
 ## Hearing Timeline
 
-Use dated bullets, one or two sentences per entry in most cases. Combine repeated routine entries only when their dates remain visible and no material difference is lost. State a shared judge or court once, then note changes when they occur. Include intermediate scheduled dates when they matter, such as when dates conflict or the record leaves a gap. Keep distinct orders, pleas, custody and bail developments, evidence events, and specific directions easy to find.
+Write a milestone timeline using bullets. Aim for 5–10 bullets in a long case and use at most 12. Use fewer for a short case. Do not reproduce the hearing table or write one bullet per source row.
+
+- Combine routine listings, adjournments, repeated notices and unchanged custody or evidence updates into one bullet per phase. Give a date range and explain what kept happening or what the court was waiting for. Omit dates of routine listings and their intermediate next-hearing dates. State a shared judge or court once and note any material transfer.
+- Keep exact dates for material changes such as a charge or plea, an order granting or refusing bail, a warrant issued or recalled, testimony actually taken, or a direction still relevant at the latest hearing. Combine related dated milestones in one bullet when necessary. Keep a material scheduling conflict and attribute its dates to the sources.
+- For example, several consecutive entries marked “HBC” during charge proceedings and routine relistings can be summarized in one date-range bullet. If the record leaves “HBC” unexplained, retain it as recorded.
 
