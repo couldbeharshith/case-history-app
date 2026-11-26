@@ -16,14 +16,15 @@ export const useSidebar = () => useContext(Ctx);
 export default function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const [previousPathname, setPreviousPathname] = useState(pathname);
+
+  if (pathname !== previousPathname) {
+    setPreviousPathname(pathname);
+    setOpen(false);
+  }
 
   const toggle = useCallback(() => setOpen((p) => !p), []);
   const close = useCallback(() => setOpen(false), []);
-
-  // Close sidebar on navigation (mobile)
-  useEffect(() => {
-    setOpen(false);
-  }, [pathname]);
 
   // ── Swipe-from-left-edge to open sidebar ──────────────────────────────
   const touchStartX = useRef<number | null>(null);

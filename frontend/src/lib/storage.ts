@@ -1,13 +1,13 @@
-import fs from "fs";
+import { randomUUID } from "node:crypto";
+import fs from "node:fs";
 import path from "path";
 import type { Chat, ChatListItem } from "./types";
 
 const DATA_DIR = path.join(process.cwd(), "chat-data");
+const CHAT_ID = /^[a-zA-Z0-9_-]{1,128}$/;
 
 function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
+  fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
 function chatFilePath(id: string): string {
@@ -27,6 +27,7 @@ export function getAllChats(): ChatListItem[] {
         id: chat.id,
         cnr_num: chat.cnr_num,
         title: chat.title,
+        pinned: chat.pinned,
         created_at: chat.created_at,
         updated_at: chat.updated_at,
       });
@@ -39,7 +40,7 @@ export function getAllChats(): ChatListItem[] {
 }
 
 export function getChat(id: string): Chat | null {
-  ensureDataDir();
+  if (!CHAT_ID.test(id)) return null;
   const fp = chatFilePath(id);
   if (!fs.existsSync(fp)) return null;
   try {
@@ -50,12 +51,19 @@ export function getChat(id: string): Chat | null {
 }
 
 export function saveChat(chat: Chat): void {
+  if (!CHAT_ID.test(chat.id)) throw new Error("Invalid chat ID");
   ensureDataDir();
-  fs.writeFileSync(chatFilePath(chat.id), JSON.stringify(chat, null, 2));
+  const temporary = path.join(DATA_DIR, `.${randomUUID()}.tmp`);
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(chat, null, 2), { mode: 0o600 });
+    fs.renameSync(temporary, chatFilePath(chat.id));
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
 }
 
 export function deleteChat(id: string): boolean {
-  ensureDataDir();
+  if (!CHAT_ID.test(id)) return false;
   const fp = chatFilePath(id);
   if (!fs.existsSync(fp)) return false;
   fs.unlinkSync(fp);

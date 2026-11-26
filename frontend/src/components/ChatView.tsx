@@ -1,38 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Chat } from "../lib/types";
+import { readEvents, streamError, type CaseStreamEvent } from "../lib/case-stream";
+import { announceChatUpdate, subscribeToChatUpdates } from "../lib/chat-updates";
+import type { Chat, ChatMessage } from "../lib/types";
 import { useSidebar } from "./SidebarProvider";
-
-// ── SSE event types (mirrors backend SSEventType) ──────────────────────────
-interface SSEvent {
-  type: "text_chunk" | "summary_log" | "manual_input_request";
-  content: string | null;
-  metadata: Record<string, string> | null;
-}
-
-// ── SSE parser helper ──────────────────────────────────────────────────────
-function parseSSEChunk(
-  buffer: string,
-  onEvent: (evt: SSEvent) => void
-): string {
-  let idx: number;
-  while ((idx = buffer.indexOf("\n\n")) !== -1) {
-    const line = buffer.slice(0, idx);
-    buffer = buffer.slice(idx + 2);
-    if (line.startsWith("data: ")) {
-      try {
-        onEvent(JSON.parse(line.slice(6)));
-      } catch {
-        /* ignore malformed */
-      }
-    }
-  }
-  return buffer;
-}
+import CaseActions from "./CaseActions";
 
 // ── Copy button ────────────────────────────────────────────────────────────
 function CopyButton({ text }: { text: string }) {
@@ -45,6 +22,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
+      aria-label={copied ? "Copied to clipboard" : "Copy to clipboard"}
       title="Copy to clipboard"
       className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition-all duration-150 cursor-pointer"
       style={{
@@ -55,9 +33,10 @@ function CopyButton({ text }: { text: string }) {
         fontFamily: "var(--font-body)",
       }}
     >
+      <span className="sr-only" role="status">{copied ? "Copied to clipboard" : ""}</span>
       {copied ? (
         <>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline className="copy-check" points="20 6 9 17 4 12" /></svg>
           Copied
         </>
       ) : (
@@ -73,7 +52,7 @@ function CopyButton({ text }: { text: string }) {
 // ── Streaming dots ─────────────────────────────────────────────────────────
 function StreamingDots() {
   return (
-    <span className="inline-flex gap-1 ml-1">
+    <span className="inline-flex gap-1 ml-1" aria-hidden="true">
       {[0, 1, 2].map((i) => (
         <span key={i} className="streaming-dot inline-block w-1 h-1 rounded-full" style={{ background: "var(--accent)" }} />
       ))}
@@ -84,7 +63,7 @@ function StreamingDots() {
 // ── Spinner icon ───────────────────────────────────────────────────────────
 function Spinner({ size = 14 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="animate-spin" aria-hidden="true">
       <path d="M21 12a9 9 0 1 1-6.219-8.56" />
     </svg>
   );
@@ -102,28 +81,60 @@ function CheckIcon() {
 // ── Progress log steps ─────────────────────────────────────────────────────
 function ProgressSteps({ steps, currentStep }: { steps: string[]; currentStep: string | null }) {
   return (
-    <div className="flex flex-col gap-2 py-3">
+    <ol className="case-progress flex flex-col gap-2 py-3">
       {steps.map((step, i) => {
-        const isCurrent = step === currentStep;
+        const isCurrent = i === steps.length - 1 && step === currentStep;
         return (
-          <div key={i} className="flex items-center gap-2.5">
+          <li key={i} className="flex items-center gap-2.5" aria-current={isCurrent ? "step" : undefined}>
             <div className="w-5 h-5 flex items-center justify-center shrink-0">
               {isCurrent ? <Spinner size={14} /> : <CheckIcon />}
             </div>
             <span
-              className="text-[13px]"
+              className="progress-label text-[13px]"
               style={{
-                color: isCurrent ? "var(--text-primary)" : "var(--text-muted)",
+                color: isCurrent ? "var(--text-primary)" : "var(--text-secondary)",
                 fontFamily: "var(--font-body)",
                 fontWeight: isCurrent ? 500 : 400,
               }}
             >
               {step}
             </span>
-          </div>
+          </li>
         );
       })}
-    </div>
+    </ol>
+  );
+}
+
+function CaseDialog({ titleId, onStop, children }: {
+  titleId: string;
+  onStop: () => void;
+  children: ReactNode;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={titleId}
+      className="case-dialog p-5 sm:p-6"
+      onCancel={(event) => event.preventDefault()}
+    >
+      {children}
+      <button
+        type="button"
+        onClick={onStop}
+        className="mx-auto mt-3 block min-h-8 cursor-pointer rounded-md px-2 text-xs text-[var(--text-secondary)] transition-colors hover:text-[var(--text-primary)]"
+      >
+        Stop lookup
+      </button>
+    </dialog>
   );
 }
 
@@ -131,181 +142,205 @@ function ProgressSteps({ steps, currentStep }: { steps: string[]; currentStep: s
 function CaptchaModal({
   captchaImg,
   errorMsg,
+  submitting,
+  onStop,
   onSubmit,
 }: {
   captchaImg: string;
   errorMsg?: string;
+  submitting: boolean;
+  onStop: () => void;
   onSubmit: (text: string) => void;
 }) {
   const [value, setValue] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
   const handleSubmit = () => {
     const trimmed = value.trim();
-    if (trimmed.length === 6) {
-      onSubmit(trimmed);
-      setValue("");
-    }
+    if (!submitting && trimmed.length === 6) onSubmit(trimmed);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-0" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}>
-      <div
-        className="rounded-2xl p-5 sm:p-6 w-full max-w-sm shadow-2xl animate-fade-in-up"
-        style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}
-      >
-        <h3 className="text-base font-bold mb-4" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
-          Solve Captcha (lowercase)
-        </h3>
+    <CaseDialog titleId="captcha-title" onStop={onStop}>
+      <h3 id="captcha-title" className="text-base font-bold mb-4" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
+        Enter the CAPTCHA in lowercase
+      </h3>
 
-        {errorMsg && (
-          <p className="text-xs mb-3 px-3 py-2 rounded-lg" style={{ color: "var(--danger)", background: "rgba(239,68,68,0.08)" }}>
-            {errorMsg}
-          </p>
-        )}
+      {errorMsg && (
+        <p role="alert" className="text-xs mb-3 px-3 py-2 rounded-lg" style={{ color: "var(--danger)", background: "rgba(239,68,68,0.08)" }}>
+          {errorMsg}
+        </p>
+      )}
 
-        <div className="flex justify-center mb-4 rounded-lg overflow-hidden" style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border)" }}>
-          <img src={`data:image/png;base64,${captchaImg}`} alt="captcha" className="h-16 object-contain" />
-        </div>
-
-        <input
-          ref={inputRef}
-          type="text"
-          maxLength={6}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-          placeholder="Enter 6 characters"
-          className="w-full px-4 py-2.5 rounded-xl text-sm font-mono tracking-widest text-center outline-none mb-4"
-          style={{
-            background: "var(--bg-tertiary)",
-            color: "var(--text-primary)",
-            border: "1px solid var(--border)",
-            caretColor: "var(--accent)",
-            fontFamily: "var(--font-mono)",
-          }}
-        />
-
-        <button
-          onClick={handleSubmit}
-          disabled={value.trim().length !== 6}
-          className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
-          style={{
-            background: value.trim().length === 6 ? "var(--accent)" : "var(--bg-elevated)",
-            color: value.trim().length === 6 ? "var(--bg-primary)" : "var(--text-muted)",
-            cursor: value.trim().length === 6 ? "pointer" : "not-allowed",
-            fontFamily: "var(--font-display)",
-          }}
-        >
-          Submit
-        </button>
+      <div className="flex justify-center mb-4 rounded-lg overflow-hidden" style={{ background: "var(--bg-tertiary)", border: "1px solid var(--border)" }}>
+        <Image unoptimized src={`data:image/png;base64,${captchaImg}`} alt="Captcha challenge" width={240} height={64} className="h-16 w-auto object-contain" />
       </div>
-    </div>
+
+      <input
+        type="text"
+        maxLength={6}
+        disabled={submitting}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+        aria-label="Captcha text"
+        placeholder="Enter 6 lowercase characters"
+        className="w-full px-4 py-2.5 rounded-xl text-sm font-mono tracking-widest text-center outline-none mb-4"
+        style={{
+          background: "var(--bg-tertiary)",
+          color: "var(--text-primary)",
+          border: "1px solid var(--border)",
+          caretColor: "var(--accent)",
+          fontFamily: "var(--font-mono)",
+        }}
+      />
+
+      <button
+        onClick={handleSubmit}
+        disabled={submitting || value.trim().length !== 6}
+        className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
+        style={{
+          background: value.trim().length === 6 ? "var(--accent)" : "var(--bg-elevated)",
+          color: value.trim().length === 6 ? "var(--bg-primary)" : "var(--text-muted)",
+          cursor: value.trim().length === 6 ? "pointer" : "not-allowed",
+          fontFamily: "var(--font-display)",
+        }}
+      >
+        {submitting ? "Submitting…" : "Submit"}
+      </button>
+    </CaseDialog>
   );
 }
 
 // ── District / PS Modal ────────────────────────────────────────────────────
-function DistrictPsModal({ policeStation, onSubmit }: { policeStation?: string | null; onSubmit: (district: string, ps: string) => void }) {
+function DistrictPsModal({ policeStation, errorMsg, submitting, onStop, onSubmit }: {
+  policeStation?: string | null;
+  errorMsg?: string;
+  submitting: boolean;
+  onStop: () => void;
+  onSubmit: (district: string, ps: string) => void;
+}) {
   const [allPs, setAllPs] = useState<Record<string, string[]> | null>(null);
   const [district, setDistrict] = useState("");
   const [ps, setPs] = useState("");
   const [loading, setLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState(false);
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
 
   useEffect(() => {
-    fetch("/api/chats/all-ps")
-      .then((r) => r.json())
-      .then((data) => {
-        setAllPs(data);
-        setLoading(false);
+    const request = new AbortController();
+    fetch("/api/chats/all-ps", { signal: request.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error();
+        return response.json();
       })
-      .catch(() => setLoading(false));
-  }, []);
+      .then((data: Record<string, string[]>) => setAllPs(data))
+      .catch(() => {
+        if (!request.signal.aborted) setCatalogError(true);
+      })
+      .finally(() => {
+        if (!request.signal.aborted) setLoading(false);
+      });
+    return () => request.abort();
+  }, [catalogAttempt]);
 
   const districts = allPs ? Object.keys(allPs).sort() : [];
-  const stations = allPs && district ? allPs[district]?.sort() ?? [] : [];
+  const stations = allPs && district ? allPs[district]?.toSorted() ?? [] : [];
 
   const handleSubmit = () => {
-    if (district && ps) onSubmit(district, ps);
+    if (!submitting && district && ps) onSubmit(district, ps);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-0" style={{ background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)" }}>
-      <div
-        className="rounded-2xl p-5 sm:p-6 w-full max-w-sm shadow-2xl animate-fade-in-up"
-        style={{ background: "var(--bg-secondary)", border: "1px solid var(--border)" }}
-      >
-        <h3 className="text-base font-bold mb-1" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
-          Select Police Station
-        </h3>
-        <p className="text-xs mb-4" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>
-          Choose the district and police station for FIR retrieval
+    <CaseDialog titleId="station-title" onStop={onStop}>
+      <h3 id="station-title" className="text-base font-bold mb-1" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
+        Select a police station
+      </h3>
+      <p className="text-xs mb-4" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>
+        Choose the district and police station to look up the FIR.
+      </p>
+
+      {policeStation && (
+        <div className="flex items-center gap-2 mb-4 px-3 py-2.5 rounded-xl" style={{ background: "var(--accent-glow)", border: "1px solid var(--border-accent)" }}>
+          <span className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>Station listed on eCourts</span>
+          <span className="text-sm font-semibold" style={{ color: "var(--accent)", fontFamily: "var(--font-mono)" }}>{policeStation}</span>
+        </div>
+      )}
+
+      {errorMsg && (
+        <p role="alert" className="mb-3 rounded-lg px-3 py-2 text-xs text-[#fca5a5]">
+          {errorMsg}
         </p>
+      )}
+      {loading ? (
+        <div className="flex items-center justify-center py-8" role="status" aria-label="Loading police stations"><Spinner size={20} /></div>
+      ) : catalogError ? (
+        <div className="space-y-3">
+          <p role="alert" className="text-sm text-[#fca5a5]">Couldn’t load the police stations.</p>
+          <button
+            type="button"
+            className="rounded-lg bg-[var(--accent-glow)] px-3 py-2 text-sm font-semibold text-[var(--accent)]"
+            onClick={() => {
+              setCatalogError(false);
+              setLoading(true);
+              setCatalogAttempt((attempt) => attempt + 1);
+            }}
+          >
+            Reload police stations
+          </button>
+        </div>
+      ) : (
+        <>
+          <label htmlFor="case-district" className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--text-secondary)" }}>District</label>
+          <select
+            id="case-district"
+            disabled={submitting}
+            value={district}
+            onChange={(e) => { setDistrict(e.target.value); setPs(""); }}
+            className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-4"
+            style={{
+              background: "var(--bg-tertiary)",
+              color: "var(--text-primary)",
+              border: "1px solid var(--border)",
+              fontFamily: "var(--font-body)",
+            }}
+          >
+            <option value="">Select district…</option>
+            {districts.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
 
-        {policeStation && (
-          <div className="flex items-center gap-2 mb-4 px-3 py-2.5 rounded-xl" style={{ background: "var(--accent-glow)", border: "1px solid var(--border-accent)" }}>
-            <span className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)" }}>eCourts PS:</span>
-            <span className="text-sm font-semibold" style={{ color: "var(--accent)", fontFamily: "var(--font-mono)" }}>{policeStation}</span>
-          </div>
-        )}
+          <label htmlFor="case-station" className="block text-[11px] font-semibold mb-1.5" style={{ color: "var(--text-secondary)" }}>Police station</label>
+          <select
+            id="case-station"
+            value={ps}
+            onChange={(e) => setPs(e.target.value)}
+            disabled={submitting || !district}
+            className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-5"
+            style={{
+              background: "var(--bg-tertiary)",
+              color: district ? "var(--text-primary)" : "var(--text-muted)",
+              border: "1px solid var(--border)",
+              fontFamily: "var(--font-body)",
+            }}
+          >
+            <option value="">Select police station…</option>
+            {stations.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-8"><Spinner size={20} /></div>
-        ) : (
-          <>
-            <label className="block text-[11px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: "var(--text-muted)" }}>District</label>
-            <select
-              value={district}
-              onChange={(e) => { setDistrict(e.target.value); setPs(""); }}
-              className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-4 appearance-none"
-              style={{
-                background: "var(--bg-tertiary)",
-                color: "var(--text-primary)",
-                border: "1px solid var(--border)",
-                fontFamily: "var(--font-body)",
-              }}
-            >
-              <option value="">Select district…</option>
-              {districts.map((d) => <option key={d} value={d}>{d}</option>)}
-            </select>
-
-            <label className="block text-[11px] font-semibold uppercase tracking-widest mb-1.5" style={{ color: "var(--text-muted)" }}>Police Station</label>
-            <select
-              value={ps}
-              onChange={(e) => setPs(e.target.value)}
-              disabled={!district}
-              className="w-full px-3 py-2.5 rounded-xl text-sm outline-none mb-5 appearance-none"
-              style={{
-                background: "var(--bg-tertiary)",
-                color: district ? "var(--text-primary)" : "var(--text-muted)",
-                border: "1px solid var(--border)",
-                fontFamily: "var(--font-body)",
-              }}
-            >
-              <option value="">Select police station…</option>
-              {stations.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
-
-            <button
-              onClick={handleSubmit}
-              disabled={!district || !ps}
-              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
-              style={{
-                background: district && ps ? "var(--accent)" : "var(--bg-elevated)",
-                color: district && ps ? "var(--bg-primary)" : "var(--text-muted)",
-                cursor: district && ps ? "pointer" : "not-allowed",
-                fontFamily: "var(--font-display)",
-              }}
-            >
-              Continue
-            </button>
-          </>
-        )}
-      </div>
-    </div>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || !district || !ps}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all duration-150"
+            style={{
+              background: district && ps ? "var(--accent)" : "var(--bg-elevated)",
+              color: district && ps ? "var(--bg-primary)" : "var(--text-muted)",
+              cursor: district && ps ? "pointer" : "not-allowed",
+              fontFamily: "var(--font-display)",
+            }}
+          >
+            {submitting ? "Submitting…" : "Continue"}
+          </button>
+        </>
+      )}
+    </CaseDialog>
   );
 }
 
@@ -377,6 +412,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasStarted, setHasStarted] = useState(false);
+  const [lookupStopped, setLookupStopped] = useState(false);
 
   // Follow-up state
   const [inputValue, setInputValue] = useState("");
@@ -391,53 +427,75 @@ export default function ChatView({ chatId }: ChatViewProps) {
   const [captchaModal, setCaptchaModal] = useState<{ img: string; error?: string } | null>(null);
   const [showDistrictPsModal, setShowDistrictPsModal] = useState(false);
   const [districtPsHint, setDistrictPsHint] = useState<string | null>(null);
+  const [manualError, setManualError] = useState<string>();
+  const [submittingManualInput, setSubmittingManualInput] = useState(false);
+
+  const activeRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => activeRequest.current?.abort(), []);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const summaryRef = useRef<HTMLDivElement>(null);
+  const followLatest = useRef(true);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const router = useRouter();
-  const { toggle: toggleSidebar } = useSidebar();
+  const { open: sidebarOpen, toggle: toggleSidebar } = useSidebar();
 
-  // Scroll tracking for scroll buttons
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const hasChat = chat !== null;
 
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const distFromTop = el.scrollTop;
-    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    setShowScrollTop(distFromTop > 150);
-    setShowScrollBottom(distFromBottom > 150);
-  }, []);
+  function updateScrollButtons(element: HTMLDivElement) {
+    const distanceFromBottom = element.scrollHeight - element.scrollTop - element.clientHeight;
+    setShowScrollTop(element.scrollTop > 150);
+    setShowScrollBottom(distanceFromBottom > 150);
+  }
+
+  function handleScroll() {
+    const element = scrollRef.current;
+    if (!element) return;
+    followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 64;
+    updateScrollButtons(element);
+  }
+
+  function scrollToEdge(edge: "top" | "bottom") {
+    const element = scrollRef.current;
+    if (!element) return;
+    followLatest.current = edge === "bottom";
+    element.scrollTo({
+      top: edge === "top" ? 0 : element.scrollHeight,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth",
+    });
+  }
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.addEventListener("scroll", handleScroll, { passive: true });
-    return () => el.removeEventListener("scroll", handleScroll);
-  }, [handleScroll]);
+    const element = scrollRef.current;
+    const content = contentRef.current;
+    if (!element || !content) return;
 
-  const scrollToTop = () => scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-  const scrollToBottom = () => scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    const observer = new ResizeObserver(() => {
+      if (followLatest.current) element.scrollTop = element.scrollHeight;
+      updateScrollButtons(element);
+    });
 
-  // Re-evaluate scroll buttons after content loads/changes (runs AFTER auto-scroll)
-  useEffect(() => {
-    const t = setTimeout(handleScroll, 250);
-    return () => clearTimeout(t);
-  }, [chat?.messages, streamText, followUpStreamText, logSteps, handleScroll]);
+    observer.observe(element);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [hasChat]);
 
-  // Auto-scroll on new content
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      // Immediately re-check scroll button visibility
-      handleScroll();
+  useEffect(() => subscribeToChatUpdates((entry) => {
+    if (entry.id === chatId) {
+      setChat((current) => current && current.title !== entry.title
+        ? { ...current, title: entry.title }
+        : current
+      );
     }
-  }, [streamText, followUpStreamText, chat?.messages, logSteps, handleScroll]);
+  }), [chatId]);
 
   // Load chat data
   useEffect(() => {
-    fetch(`/api/chats/${chatId}`)
+    const request = new AbortController();
+    fetch(`/api/chats/${chatId}`, { signal: request.signal })
       .then((r) => {
         if (!r.ok) throw new Error("Chat not found");
         return r.json();
@@ -448,26 +506,18 @@ export default function ChatView({ chatId }: ChatViewProps) {
           setHasStarted(true);
         }
       })
-      .catch(() => router.push("/"));
+      .catch(() => {
+        if (!request.signal.aborted) router.push("/");
+      });
+    return () => request.abort();
   }, [chatId, router]);
-
-  // Auto-scroll
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [streamText, followUpStreamText, chat?.messages, logSteps]);
 
   // ── Handle a single SSE event (summary flow) ──────────────────────────
   const handleSSEvent = useCallback(
-    (evt: SSEvent) => {
+    (evt: CaseStreamEvent) => {
       switch (evt.type) {
         case "summary_log": {
           const msg = evt.content ?? "";
-          if (msg.startsWith("Error:")) {
-            setError(msg);
-            return;
-          }
           setCurrentStep(msg);
           setLogSteps((prev) => {
             // Replace duplicate current step or append
@@ -479,6 +529,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
         case "manual_input_request": {
           const meta = evt.metadata;
           if (!meta) break;
+          setManualError(undefined);
           if (meta.type === "solve_captcha") {
             setCaptchaModal({ img: meta.captcha_img, error: meta.error });
           } else if (meta.type === "district_ps") {
@@ -488,7 +539,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
           break;
         }
         case "text_chunk": {
-          // First text chunk means "Generating case summary" step is done
+          setShowDistrictPsModal(false);
           setCurrentStep((prev) => (prev === null ? prev : null));
           setStreamText((prev) => prev + (evt.content ?? ""));
           break;
@@ -499,17 +550,23 @@ export default function ChatView({ chatId }: ChatViewProps) {
   );
 
   // ── Initial summary stream (SSE) ─────────────────────────────────────
-  const startStream = useCallback(async () => {
-    if (hasStarted || isStreaming) return;
+  const startStream = useCallback(async (retry = false) => {
+    if (activeRequest.current || (hasStarted && !retry)) return;
+    const request = new AbortController();
+    activeRequest.current = request;
+    followLatest.current = true;
     setHasStarted(true);
     setIsStreaming(true);
+    setLookupStopped(false);
     setError(null);
     setStreamText("");
     setLogSteps([]);
     setCurrentStep((prev) => (prev === null ? prev : null));
 
     try {
-      const res = await fetch(`/api/chats/${chatId}/stream`, { method: "POST" });
+      const res = await fetch(`/api/chats/${chatId}/stream`, {
+        method: "POST", signal: request.signal,
+      });
       if (!res.ok) {
         const errData = await res.json().catch(() => ({ error: "Unknown error" }));
         throw new Error(errData.error || `Backend error: ${res.status}`);
@@ -524,33 +581,53 @@ export default function ChatView({ chatId }: ChatViewProps) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        buffer = parseSSEChunk(buffer, handleSSEvent);
+        buffer = readEvents(buffer, (event) => {
+          const message = streamError(event);
+          if (message) throw new Error(message);
+          handleSSEvent(event);
+        });
       }
 
       // Re-fetch saved chat
-      const updatedChat = await fetch(`/api/chats/${chatId}`).then((r) => r.json());
+      const response = await fetch(`/api/chats/${chatId}`, { signal: request.signal });
+      if (!response.ok) throw new Error("Couldn’t reload the saved case.");
+      const updatedChat: Chat = await response.json();
       setChat(updatedChat);
+      announceChatUpdate(updatedChat);
       setStreamText("");
       setLogSteps([]);
       setCurrentStep((prev) => (prev === null ? prev : null));
     } catch (err) {
+      if (request.signal.aborted) return;
       setError(err instanceof Error ? err.message : "Something went wrong");
+      setStreamText("");
     } finally {
+      request.abort();
+      if (activeRequest.current === request) activeRequest.current = null;
+      setCaptchaModal(null);
+      setShowDistrictPsModal(false);
       setIsStreaming(false);
     }
-  }, [chatId, hasStarted, isStreaming, handleSSEvent]);
+  }, [chatId, hasStarted, handleSSEvent]);
 
   // ── Follow-up message stream (SSE) ────────────────────────────────────
   const sendFollowUp = useCallback(async () => {
     const question = inputValue.trim();
     if (!question || isFollowingUp || isStreaming) return;
 
+    const request = new AbortController();
+    activeRequest.current = request;
+    followLatest.current = true;
     setInputValue("");
+    if (inputRef.current) inputRef.current.style.height = "auto";
     setIsFollowingUp(true);
     setFollowUpStreamText("");
 
-    setChat((prev) =>
-      prev ? { ...prev, messages: [...prev.messages, { role: "user", content: question, timestamp: Date.now() }] } : prev
+    setError(null);
+    const pendingMessage: ChatMessage = { role: "user", content: question, timestamp: Date.now() };
+    setChat((previous) => previous
+      ? { ...previous, messages: [...previous.messages, pendingMessage] }
+      : previous
     );
 
     try {
@@ -558,6 +635,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question }),
+        signal: request.signal,
       });
 
       if (!res.ok) {
@@ -574,61 +652,78 @@ export default function ChatView({ chatId }: ChatViewProps) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        buffer = parseSSEChunk(buffer, (evt) => {
+        buffer = readEvents(buffer, (evt) => {
+          const message = streamError(evt);
+          if (message) throw new Error(message);
           if (evt.type === "text_chunk") {
             setFollowUpStreamText((prev) => prev + (evt.content ?? ""));
           }
         });
       }
 
-      const updatedChat = await fetch(`/api/chats/${chatId}`).then((r) => r.json());
+      const response = await fetch(`/api/chats/${chatId}`, { signal: request.signal });
+      if (!response.ok) throw new Error("Couldn’t reload the saved case.");
+      const updatedChat: Chat = await response.json();
       setChat(updatedChat);
+      announceChatUpdate(updatedChat);
       setFollowUpStreamText("");
     } catch (err) {
+      if (request.signal.aborted) return;
       setError(err instanceof Error ? err.message : "Something went wrong");
+      setInputValue(question);
+      setFollowUpStreamText("");
+      setChat((previous) => previous
+        ? { ...previous, messages: previous.messages.filter((message) => message !== pendingMessage) }
+        : previous
+      );
     } finally {
+      request.abort();
+      if (activeRequest.current === request) activeRequest.current = null;
       setIsFollowingUp(false);
     }
   }, [chatId, inputValue, isFollowingUp, isStreaming]);
 
-  // ── Manual input handlers ─────────────────────────────────────────────
-  const submitCaptcha = useCallback(async (text: string) => {
-    setCaptchaModal(null);
-    try {
-      await fetch(`/api/chats/${chatId}/input`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ captcha_text: text }),
-      });
-    } catch {
-      setError("Failed to submit captcha");
-    }
-  }, [chatId]);
+  function stopLookup() {
+    activeRequest.current?.abort();
+    setStreamText("");
+    setLogSteps([]);
+    setCurrentStep(null);
+    setLookupStopped(true);
+  }
 
-  const submitDistrictPs = useCallback(async (district: string, ps: string) => {
-    setShowDistrictPsModal(false);
+  async function sendManualInput(values: Record<string, string>, onAccepted: () => void) {
+    const request = activeRequest.current;
+    if (!request || submittingManualInput) return;
+    setSubmittingManualInput(true);
+    setManualError(undefined);
+
     try {
-      await fetch(`/api/chats/${chatId}/input`, {
+      const response = await fetch(`/api/chats/${chatId}/input`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ district, ps }),
+        body: JSON.stringify(values),
+        signal: request.signal,
       });
+      if (!response.ok) throw new Error();
+      onAccepted();
     } catch {
-      setError("Failed to submit selection");
+      if (!request.signal.aborted) setManualError("Couldn’t submit your input. Try again.");
+    } finally {
+      setSubmittingManualInput(false);
     }
-  }, [chatId]);
+  }
 
   // Auto-start stream
   useEffect(() => {
-    if (chat && chat.messages.length === 0 && !hasStarted) {
+    if (chat && !chat.messages.some((message) => message.role === "assistant") && !hasStarted) {
       startStream();
     }
   }, [chat, hasStarted, startStream]);
 
   if (!chat) {
     return (
-      <div className="flex-1 flex items-center justify-center h-screen">
-        <div className="flex flex-col items-center gap-4 animate-fade-in-up">
+      <div className="flex-1 flex items-center justify-center h-full">
+        <div className="flex flex-col items-center gap-4" role="status">
           <div className="w-10 h-10 rounded-xl animate-shimmer" />
           <span className="text-sm font-medium" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>
             Loading case...
@@ -639,21 +734,45 @@ export default function ChatView({ chatId }: ChatViewProps) {
   }
 
   const conversationMessages = chat.messages.slice(1);
-  const summaryDone = !isStreaming && conversationMessages.length > 0;
+  const summary = chat.messages.find((message) => message.role === "assistant");
+  const summaryDone = !isStreaming && Boolean(summary);
   const busyStreaming = isStreaming || isFollowingUp;
 
   return (
-    <div className="flex flex-col h-screen relative">
+    <div className="flex h-full flex-col relative">
       {/* Modals */}
-      {captchaModal && <CaptchaModal captchaImg={captchaModal.img} errorMsg={captchaModal.error} onSubmit={submitCaptcha} />}
-      {showDistrictPsModal && <DistrictPsModal policeStation={districtPsHint} onSubmit={submitDistrictPs} />}
+      {captchaModal && (
+        <CaptchaModal
+          onStop={stopLookup}
+          key={captchaModal.img}
+          captchaImg={captchaModal.img}
+          errorMsg={manualError || captchaModal.error}
+          submitting={submittingManualInput}
+          onSubmit={(captchaText) => void sendManualInput(
+            { captcha_text: captchaText },
+            () => setCaptchaModal((current) => current === captchaModal ? null : current),
+          )}
+        />
+      )}
+      {showDistrictPsModal && (
+        <DistrictPsModal
+          onStop={stopLookup}
+          policeStation={districtPsHint}
+          errorMsg={manualError}
+          submitting={submittingManualInput}
+          onSubmit={(district, ps) => void sendManualInput(
+            { district, ps },
+            () => setShowDistrictPsModal(false),
+          )}
+        />
+      )}
 
       {/* Floating header pills */}
-      <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none">
-        <div className="flex items-center justify-between px-3 md:px-5 pt-3 md:pt-4">
+      <div className="case-toolbar absolute top-0 left-0 right-0 z-20 pointer-events-none">
+        <div className="flex items-center justify-between gap-2 px-3 md:px-5 pt-3 md:pt-4">
           {/* Left pill: hamburger + title */}
           <div
-            className="pointer-events-auto flex items-center gap-2 pl-1 pr-3 md:pl-3 md:pr-4 py-1.5 md:py-2 rounded-full shadow-lg"
+            className="pointer-events-auto flex min-w-0 items-center gap-2 pl-1 pr-3 md:pl-3 md:pr-4 py-1.5 md:py-2 rounded-full shadow-lg"
             style={{
               background: "rgba(17, 17, 17, 0.85)",
               backdropFilter: "blur(12px)",
@@ -664,6 +783,9 @@ export default function ChatView({ chatId }: ChatViewProps) {
             {/* Hamburger — mobile only */}
             <button
               onClick={toggleSidebar}
+              aria-label="Case history"
+              aria-expanded={sidebarOpen}
+              aria-controls="case-sidebar"
               className="p-1.5 rounded-lg transition-colors hover:bg-[var(--bg-tertiary)] cursor-pointer md:hidden shrink-0"
               style={{ color: "var(--text-muted)" }}
             >
@@ -674,48 +796,35 @@ export default function ChatView({ chatId }: ChatViewProps) {
             {busyStreaming && (
               <div className="w-1.5 h-1.5 rounded-full animate-glow shrink-0" style={{ background: "var(--accent)" }} />
             )}
-            <h1 className="text-[13px] font-bold tracking-tight truncate max-w-[180px] md:max-w-none" style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
+            <h1 className="min-w-0 truncate text-[13px] font-bold tracking-tight"
+              title={chat.title} style={{ fontFamily: "var(--font-display)", color: "var(--text-primary)" }}>
               {chat.title}
             </h1>
             {busyStreaming && (
               <span
-                className="text-[9px] font-semibold uppercase tracking-widest px-1.5 py-0.5 rounded-md shrink-0"
+                role="status"
+                className="ui-appear text-[10px] font-semibold px-1.5 py-0.5 rounded-md shrink-0"
                 style={{ background: "var(--accent-glow)", color: "var(--accent)", fontFamily: "var(--font-body)" }}
               >
                 Live
               </span>
             )}
           </div>
-          {/* Right pill: CNR badge */}
-          <div
-            className="pointer-events-auto px-2.5 md:px-3 py-1.5 md:py-2 rounded-full shadow-lg hidden sm:block"
-            style={{
-              background: "rgba(17, 17, 17, 0.85)",
-              backdropFilter: "blur(12px)",
-              WebkitBackdropFilter: "blur(12px)",
-              border: "1px solid var(--border-accent)",
-            }}
-          >
-            <span
-              className="text-[10px] md:text-xs font-medium"
-              style={{
-                color: "var(--accent)",
-                fontFamily: "var(--font-mono)",
-                letterSpacing: "0.03em",
-              }}
-            >
-              {chat.cnr_num}
-            </span>
-          </div>
+          <CaseActions
+            chat={chat}
+            summary={summaryDone ? summary : undefined}
+            summaryRef={summaryRef}
+            onStop={isStreaming ? stopLookup : undefined}
+          />
         </div>
       </div>
 
       {/* Messages area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto scroll-smooth">
-        <div className="max-w-3xl mx-auto px-4 md:px-6 pt-16 md:pt-20 pb-36 md:pb-40">
+      <div ref={scrollRef} onScroll={handleScroll} data-case-viewport className="flex-1 overflow-y-auto">
+        <div ref={contentRef} className="max-w-3xl mx-auto px-4 md:px-6 pt-16 md:pt-20 pb-36 md:pb-40">
 
           {/* Initial user message */}
-          <div className="animate-fade-in-up mb-8 md:mb-10">
+          <div className="mb-8 md:mb-10">
             <div className="flex items-center gap-2.5 mb-1.5">
               <div
                 className="w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center text-[10px] md:text-[11px] font-bold shrink-0"
@@ -739,38 +848,30 @@ export default function ChatView({ chatId }: ChatViewProps) {
           </div>
 
           {/* Separator */}
-          <div className="mb-8 md:mb-10 animate-fade-in-up" style={{ animationDelay: "0.1s" }}>
+          <div className="mb-8 md:mb-10">
             <div className="h-px w-full" style={{ background: "linear-gradient(90deg, transparent, var(--border), transparent)" }} />
           </div>
 
-          {/* Progress log steps (during summary generation) */}
-          {isStreaming && logSteps.length > 0 && !streamText && (
-            <div className="animate-fade-in-up mb-8 md:mb-10" style={{ animationDelay: "0.15s" }}>
-              <div className="flex items-center gap-2.5 mb-2">
-                <div
-                  className="w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center text-[10px] md:text-[11px] font-extrabold shrink-0"
-                  style={{ background: "var(--accent)", color: "var(--bg-primary)", fontFamily: "var(--font-display)" }}
-                >
-                  CF
-                </div>
-                <p className="text-[11px] font-semibold uppercase tracking-widest" style={{ color: "var(--text-muted)", fontFamily: "var(--font-body)" }}>
-                  CaseFlow
-                </p>
-                <StreamingDots />
-              </div>
-              <ProgressSteps steps={logSteps} currentStep={currentStep} />
-            </div>
-          )}
-
-          {/* Initial summary streaming (after text_chunk starts) */}
-          {(isStreaming && streamText) && (
-            <div className="animate-fade-in-up mb-8 md:mb-10" style={{ animationDelay: "0.2s" }}>
-              {logSteps.length > 0 && (
-                <div className="mb-6">
-                  <ProgressSteps steps={logSteps} currentStep={null} />
+          <span className="sr-only" role="status">{isStreaming ? currentStep : ""}</span>
+          {isStreaming && (logSteps.length > 0 || streamText) && (
+            <div className="mb-8 md:mb-10">
+              {!streamText && (
+                <div className="ui-appear flex items-center gap-2.5 mb-2">
+                  <div className="w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center text-[10px] md:text-[11px] font-extrabold shrink-0" style={{ background: "var(--accent)", color: "var(--bg-primary)", fontFamily: "var(--font-display)" }}>
+                    CF
+                  </div>
+                  <p className="text-xs font-semibold" style={{ color: "var(--text-secondary)" }}>
+                    CaseFlow
+                  </p>
+                  <StreamingDots />
                 </div>
               )}
-              <AssistantBubble content={streamText} isStreaming={isStreaming} />
+              {logSteps.length > 0 && <ProgressSteps steps={logSteps} currentStep={currentStep} />}
+              {streamText && (
+                <div className="mt-4">
+                  <AssistantBubble content={streamText} isStreaming />
+                </div>
+              )}
             </div>
           )}
 
@@ -783,7 +884,11 @@ export default function ChatView({ chatId }: ChatViewProps) {
             if (isLastAssistant) return null;
 
             return (
-              <div key={idx} className="animate-fade-in-up mb-8 md:mb-10">
+              <div
+                key={idx}
+                ref={msg === summary ? summaryRef : undefined}
+                className={msg === summary ? "case-summary mb-8 md:mb-10" : "mb-8 md:mb-10"}
+              >
                 {msg.role === "assistant" ? (
                   <AssistantBubble content={msg.content} />
                 ) : (
@@ -795,32 +900,32 @@ export default function ChatView({ chatId }: ChatViewProps) {
 
           {/* Live follow-up stream */}
           {isFollowingUp && (
-            <div className="animate-fade-in-up mb-8 md:mb-10">
+            <div className="ui-appear mb-8 md:mb-10">
               <AssistantBubble content={followUpStreamText} isStreaming={true} />
             </div>
           )}
 
-          {/* Error state */}
-          {error && (
+          {(error || lookupStopped) && (
             <div
-              className="mt-6 md:mt-8 rounded-xl overflow-hidden animate-fade-in-up"
-              style={{ background: "rgba(239, 68, 68, 0.06)", border: "1px solid rgba(239, 68, 68, 0.12)" }}
+              className={`ui-appear mt-6 rounded-xl border p-4 md:mt-8 md:p-5 ${
+                lookupStopped
+                  ? "border-[var(--border-accent)] bg-[var(--accent-glow)]"
+                  : "border-red-500/20 bg-red-500/[0.06]"
+              }`}
             >
-              <div className="px-4 md:px-5 py-3 md:py-4 flex items-start gap-3">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
-                  <circle cx="12" cy="12" r="10" />
-                  <line x1="12" y1="8" x2="12" y2="12" />
-                  <line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
-                <div>
-                  <p className="text-sm font-semibold mb-0.5" style={{ color: "var(--danger)", fontFamily: "var(--font-display)" }}>
-                    Request failed
-                  </p>
-                  <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
-                    {error}
-                  </p>
-                </div>
+              <div role={lookupStopped ? "status" : "alert"}>
+                <p className="text-sm font-semibold [font-family:var(--font-display)]">
+                  {lookupStopped ? "Lookup stopped" : "Request failed"}
+                </p>
+                <p className="mt-1 text-sm leading-relaxed text-[var(--text-secondary)]">
+                  {lookupStopped ? "Start again when you’re ready." : error}
+                </p>
               </div>
+              {!summary && !isStreaming && (
+                <button className="case-action mt-3" type="button" onClick={() => void startStream(true)}>
+                  Retry lookup
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -829,7 +934,8 @@ export default function ChatView({ chatId }: ChatViewProps) {
       {/* Scroll buttons — stacked bottom-right */}
       <div className="absolute right-3 md:right-5 bottom-20 md:bottom-24 z-10 flex flex-col items-center gap-1.5">
         <button
-          onClick={scrollToTop}
+          onClick={() => scrollToEdge("top")}
+          tabIndex={showScrollTop ? 0 : -1}
           className={`scroll-btn rounded-full flex items-center justify-center cursor-pointer ${showScrollTop ? "scroll-btn-visible" : ""}`}
           style={{ background: "var(--bg-secondary)", color: "var(--text-muted)", boxShadow: showScrollTop ? "0 2px 10px rgba(0,0,0,0.4)" : "none" }}
           aria-label="Scroll to top"
@@ -839,7 +945,8 @@ export default function ChatView({ chatId }: ChatViewProps) {
           </svg>
         </button>
         <button
-          onClick={scrollToBottom}
+          onClick={() => scrollToEdge("bottom")}
+          tabIndex={showScrollBottom ? 0 : -1}
           className={`scroll-btn rounded-full flex items-center justify-center cursor-pointer ${showScrollBottom ? "scroll-btn-visible" : ""}`}
           style={{ background: "var(--bg-secondary)", color: "var(--text-muted)", boxShadow: showScrollBottom ? "0 2px 10px rgba(0,0,0,0.4)" : "none" }}
           aria-label="Scroll to bottom"
@@ -853,16 +960,8 @@ export default function ChatView({ chatId }: ChatViewProps) {
       {/* Floating follow-up input — shown once the initial summary is done */}
       {summaryDone && (
         <div className="absolute bottom-0 left-0 right-0 pointer-events-none pb-4 md:pb-5 px-3 md:px-6">
-          <div className="max-w-3xl mx-auto pointer-events-auto">
-            <div
-              className="flex items-end gap-2 md:gap-3 rounded-2xl px-3 md:px-4 py-2.5 md:py-3 shadow-2xl"
-              style={{
-                background: "var(--bg-secondary)",
-                border: "1px solid var(--border)",
-                boxShadow: "0 -8px 32px rgba(0,0,0,0.4), 0 0 0 1px var(--border)",
-                backdropFilter: "blur(12px)",
-              }}
-            >
+          <div className="ui-appear max-w-3xl mx-auto pointer-events-auto">
+            <div className="composer-field flex items-end gap-2 md:gap-3 rounded-2xl px-3 md:px-4 py-2.5 md:py-3">
               <textarea
                 ref={inputRef}
                 rows={1}
@@ -878,6 +977,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
                     sendFollowUp();
                   }
                 }}
+                aria-label="Ask a follow-up"
                 placeholder="Ask a follow-up…"
                 disabled={busyStreaming}
                 className="flex-1 bg-transparent resize-none outline-none focus:outline-none text-sm leading-relaxed"
@@ -892,6 +992,7 @@ export default function ChatView({ chatId }: ChatViewProps) {
               />
               <button
                 onClick={sendFollowUp}
+                aria-label="Send follow-up"
                 disabled={busyStreaming || !inputValue.trim()}
                 className="shrink-0 w-8 h-8 rounded-lg flex items-center justify-center transition-all duration-150"
                 style={{
