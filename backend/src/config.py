@@ -8,7 +8,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 
-load_dotenv()
+# Load .env from the project root with override=True to replace any existing env vars
+_project_root = Path(__file__).parent.parent.parent
+load_dotenv(_project_root / ".env", override=True)
+
+# Verify the API key is loaded
+_api_key = os.getenv("OPENAI_API_KEY")
+if not _api_key:
+    raise ValueError("OPENAI_API_KEY not found in environment or .env file")
 
 
 logging.basicConfig(
@@ -37,8 +44,8 @@ OPTIONS_PROMPT_FILE = _PROMPTS_DIR / "options_prompt.md"
 MAX_CAPTCHA_RETRIES = 3
 HEADLESS = os.getenv("HEADLESS", "0").lower() in ("1", "true", "yes", "y")
 
-# Global OA client instance
-client = OpenAI()
+# Global OpenAI client instance - initialized after .env is loaded
+client = OpenAI(api_key=_api_key)
 
 
 @lru_cache(maxsize=None)

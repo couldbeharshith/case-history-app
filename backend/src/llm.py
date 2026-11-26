@@ -73,12 +73,12 @@ def build_summary_text(history: list[dict[str, str]]) -> str:
     for entry in history:
         parts.append(
             f"---\n"
-            f"Judge: {entry['judge']}\n"
+            f"{entry['judge']}\n"
             f"Business On Date: {entry['business_on_date']}\n"
-            f"Hearing Date: {entry['hearing_date']}\n"
+            f"Next Hearing Date: {entry['hearing_date']}\n"
             f"Purpose Of Hearing: {entry['purpose']}\n"
-            f"Content (Main Event): {entry['content']}\n"
-            f"Row number: {entry['row_num']}"
+            f"Content: {entry['content']}\n"
+            f"Row_num: {entry['row_num']}"
         )
     parts.append("\n===END===")
     return "\n".join(parts)

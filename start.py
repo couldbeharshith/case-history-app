@@ -28,7 +28,7 @@ if os.name == "nt":
 
 
 services = [
-    ("BE", COLOR_CYAN, "backend", f'"{sys.executable}" -m uvicorn api:app --host 127.0.0.1 --port 8000 --reload'),
+    ("BE", COLOR_CYAN, "backend", f'"{sys.executable}" -m uvicorn api:app --host 127.0.0.1 --port 8000'),
     ("FE", COLOR_GREEN, "frontend", "npm run start"),
     ("Ngrok", COLOR_GRAY, "", "ngrok http 3000"),
 ]
